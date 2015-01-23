@@ -1,6 +1,5 @@
 
-
-#include "ptree/ptree.h"
+#include "tdb/ptree.h"
 #include "cppkit/ck_exception.h"
 #include "cppkit/ck_path.h"
 #include "cppkit/os/ck_large_files.h"
@@ -210,43 +209,43 @@ bool ptree::iterator::_next()
     }
 }
 
-ptree::ptree( const ck_string& indexPath, size_t indexAllocSize ) :
-    _indexPath( indexPath ),
-    _indexFile( NULL ),
-    _indexFileSize( 0 ),
+ptree::ptree( const ck_string& path, size_t indexAllocSize ) :
+    _path( path ),
+    _file( NULL ),
+    _fileSize( 0 ),
     _memoryMap(),
     _journalFile( NULL ),
     _completeJournalRecovery( true ),
     _dirtyPages()
 {
-    bool exists = ck_path::exists( _indexPath );
+    bool exists = ck_path::exists( _path );
 
     if( !exists )
     {
-        _indexFile = fopen( _indexPath.c_str(), "w+b" );
-        if( !_indexFile )
+        _file = fopen( _path.c_str(), "w+b" );
+        if( !_file )
             CK_THROW(("Unable to open file."));
 
-        if( ck_fallocate( _indexFile, indexAllocSize ) < 0 )
+        if( ck_fallocate( _file, indexAllocSize ) < 0 )
             CK_THROW(("Unable to pre allocate file."));
 
         // Note: windows required preallocated files to be closed and reopened to see the new size
-        fclose( _indexFile );
+        fclose( _file );
     }
 
     ck_file_info fileInfo;
-    if( ck_stat( _indexPath.c_str(), &fileInfo ) < 0 )
+    if( ck_stat( _path.c_str(), &fileInfo ) < 0 )
         CK_THROW(("Unable to stat file."));
 
-    _indexFileSize = fileInfo.file_size;
+    _fileSize = fileInfo.file_size;
 
-    _indexFile = fopen( _indexPath.c_str(), "r+b" );
-    if( !_indexFile )
+    _file = fopen( _path.c_str(), "r+b" );
+    if( !_file )
         CK_THROW(("Unable to open file."));
 
-    _memoryMap = make_shared<ck_memory_map>( fileno( _indexFile ),
+    _memoryMap = make_shared<ck_memory_map>( fileno( _file ),
                                              0,
-                                             (uint32_t)_indexFileSize,
+                                             (uint32_t)_fileSize,
                                              ck_memory_map::MM_PROT_READ | ck_memory_map::MM_PROT_WRITE,
                                              ck_memory_map::MM_TYPE_FILE | ck_memory_map::MM_SHARED );
 
@@ -258,7 +257,7 @@ ptree::~ptree() throw()
 {
     _memoryMap.reset();
 
-    fclose( _indexFile );
+    fclose( _file );
 }
 
 void ptree::insert( int64_t key, uint8_t* src, uint32_t size  )
@@ -322,7 +321,7 @@ void ptree::commit_transaction()
     if( !_journalFile )
         CK_THROW(("Cant commit unopened journal!"));
 
-    ck_filecommit( _indexFile );
+    ck_filecommit( _file );
 
     fclose( _journalFile );
 
@@ -386,12 +385,12 @@ void ptree::roll_back_transaction()
         CK_LOG_ERROR("Unable to complete journal recovery.");
     }
 
-    ck_filecommit( _indexFile );
+    ck_filecommit( _file );
 
     fclose( j );
 
     if( !_completeJournalRecovery )
-        CK_THROW(("Was unable to succeed!"));
+        CK_THROW(("Transaction roll back failed."));
 
     ::remove( "journal" );
 }
@@ -424,7 +423,7 @@ void ptree::_initialize_new_file()
     _write_word( CB_VERSION_OFS, 1 );
     _write_word( CB_ROOT_OFS, 0 );
     _write_word( CB_FREE_OFS, HEADER_SIZE );
-    _write_word( CB_DATA_FREE_OFS, _indexFileSize );
+    _write_word( CB_DATA_FREE_OFS, _fileSize );
 
     commit_transaction();
 }

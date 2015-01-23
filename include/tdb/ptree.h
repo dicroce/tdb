@@ -12,17 +12,17 @@
 namespace tdb
 {
 
-// PTree is a super tiny key value database. PTree is very much a work in progress at the moment and should not be
+// ptree is a super tiny key value database. ptree is very much a work in progress at the moment and should not be
 // used for any mission critical task. I do my best to keep it defect free, but I make no guarantees.
 //
-// The main purpose of PTree is to illustrate some of the concepts required to implement a real database. I consider
+// The main purpose of ptree is to illustrate some of the concepts required to implement a real database. I consider
 // it largely educational.
 //
 // Features:
-//     - Short (PTree.cpp is 490 lines long at this moment).
+//     - Short (ptree.cpp is 490 lines long at this moment).
 //     - Atomic (journal based).
 //     - Supports transactions (implicit or explicit).
-//     - Simplicity (PTree is based on AVL trees, which IMHO are the simplest form of balanced tree... so it should
+//     - Simplicity (ptree is based on AVL trees, which IMHO are the simplest form of balanced tree... so it should
 //       be pretty easy to work on).
 //     - Not Thread Safe, so no speed penalty or complexity from locking.
 //
@@ -78,7 +78,7 @@ public:
 
     friend class iterator;
 
-    ptree( const cppkit::ck_string& indexPath, size_t indexAllocSize );
+    ptree( const cppkit::ck_string& path, size_t indexAllocSize );
 
     virtual ~ptree() throw();
 
@@ -132,9 +132,9 @@ private:
 
     iterator _find( uint32_t ofs, int64_t key );
 
-    cppkit::ck_string _indexPath;
-    FILE* _indexFile;
-    size_t _indexFileSize;
+    cppkit::ck_string _path;
+    FILE* _file;
+    size_t _fileSize;
     std::shared_ptr<cppkit::ck_memory_map> _memoryMap;
     FILE* _journalFile;
     bool _completeJournalRecovery;
