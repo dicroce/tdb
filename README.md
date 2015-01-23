@@ -6,6 +6,7 @@ It supports atomic commit (via a journal file), and transactions (with rollback)
 based AVL tree primarily because I consider it to be the simplest to implement but still balanced tree type. A real
 database should use B+trees or log structured merge trees.
 
+```
 #include "tdb/ptree.h"
 
 using namespace tdb;
@@ -21,3 +22,4 @@ int main( int agrc, char* argv[] )
     t.insert( 100, dumbRecord, 10 );
     t.end_transaction();
 }
+```
