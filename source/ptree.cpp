@@ -1,13 +1,12 @@
 
 #include "tdb/ptree.h"
 #include "cppkit/ck_exception.h"
-#include "cppkit/ck_path.h"
-#include "cppkit/os/ck_large_files.h"
-#include "cppkit/ck_byte_ptr.h"
+#include "cppkit/ck_file.h"
 #include "cppkit/ck_socket.h"
 
 using namespace tdb;
 using namespace cppkit;
+using namespace ck_networking;
 using namespace std;
 
 const uint32_t HEADER_SIZE = 64;
@@ -152,7 +151,7 @@ uint8_t* ptree::iterator::data_ptr()
     if( _current == ptree::iterator::END )
         CK_THROW(("Invalid iterator."));
 
-    return (uint8_t*)_tree->_memoryMap->map().get_ptr() + _tree->_read_word( _current + NODE_REC_OFS );
+    return _tree->_memoryMap->map() + _tree->_read_word( _current + NODE_REC_OFS );
 }
 
 // walking a tree without recursion is surprisingly complicated... :)
@@ -209,7 +208,7 @@ bool ptree::iterator::_next()
     }
 }
 
-ptree::ptree( const ck_string& path, size_t indexAllocSize ) :
+ptree::ptree( const std::string& path, size_t indexAllocSize ) :
     _path( path ),
     _file( NULL ),
     _fileSize( 0 ),
@@ -218,7 +217,7 @@ ptree::ptree( const ck_string& path, size_t indexAllocSize ) :
     _completeJournalRecovery( true ),
     _dirtyPages()
 {
-    bool exists = ck_path::exists( _path );
+    bool exists = ck_fs::file_exists( _path );
 
     if( !exists )
     {
@@ -226,15 +225,15 @@ ptree::ptree( const ck_string& path, size_t indexAllocSize ) :
         if( !_file )
             CK_THROW(("Unable to open file."));
 
-        if( ck_fallocate( _file, indexAllocSize ) < 0 )
+        if( ck_fs::fallocate( _file, indexAllocSize ) < 0 )
             CK_THROW(("Unable to pre allocate file."));
 
         // Note: windows required preallocated files to be closed and reopened to see the new size
         fclose( _file );
     }
 
-    ck_file_info fileInfo;
-    if( ck_stat( _path.c_str(), &fileInfo ) < 0 )
+    ck_fs::ck_file_info fileInfo;
+    if( ck_fs::stat( _path.c_str(), &fileInfo ) < 0 )
         CK_THROW(("Unable to stat file."));
 
     _fileSize = fileInfo.file_size;
@@ -301,7 +300,7 @@ void ptree::begin_transaction()
     if( _journalFile )
         CK_THROW(("Journal is already open!"));
 
-    if( ck_path::exists( "journal" ) )
+    if( ck_fs::file_exists( "journal" ) )
     {
         CK_LOG_NOTICE(("Journal exists, attempting rollback..."));
 
@@ -321,7 +320,7 @@ void ptree::commit_transaction()
     if( !_journalFile )
         CK_THROW(("Cant commit unopened journal!"));
 
-    ck_filecommit( _file );
+    fsync(fileno(_file));
 
     fclose( _journalFile );
 
@@ -336,7 +335,7 @@ void ptree::roll_back_transaction()
     if( !j )
         CK_THROW(("Unable to open journal for recovery!"));
 
-    uint8_t* map = (uint8_t*)_memoryMap->map().get_ptr();
+    uint8_t* map = _memoryMap->map();
 
     _completeJournalRecovery = false;
 
@@ -385,7 +384,7 @@ void ptree::roll_back_transaction()
         CK_LOG_ERROR("Unable to complete journal recovery.");
     }
 
-    ck_filecommit( _file );
+    fsync(fileno(_file));
 
     fclose( j );
 
@@ -432,61 +431,61 @@ inline void ptree::_write_word( uint32_t ofs, uint32_t val )
 {
     _write_journal( ofs, sizeof(val) );
 
-    ck_byte_ptr p = _memoryMap->map();
+    auto p = _memoryMap->map();
     p += ofs;
-    uint32_t word = htonl( val );
-    p.write<uint32_t>( word );
+    uint32_t word = ck_htonl( val );
+    *(uint32_t*)p = word;
 }
 
 inline void ptree::_write_dword( uint32_t ofs, int64_t val )
 {
     _write_journal( ofs, sizeof(val) );
 
-    ck_byte_ptr p = _memoryMap->map();
+    auto p = _memoryMap->map();
     p += ofs;
-    int64_t dword = x_htonll( val );
-    p.write<int64_t>( dword );
+    int64_t dword = ck_htonll( val );
+    *(int64_t*)p = dword;
 }
 
 inline void ptree::_write_byte( uint32_t ofs, uint8_t val )
 {
     _write_journal( ofs, sizeof(val) );
 
-    ck_byte_ptr p = _memoryMap->map();
+    auto p = _memoryMap->map();
     p += ofs;
-    p.write<uint8_t>( val );
+    *(uint8_t*)p = val;
 }
 
 inline void ptree::_write_bytes( uint32_t ofs, uint8_t* src, uint32_t size )
 {
     _write_journal( ofs, size );
 
-    ck_byte_ptr p = _memoryMap->map();
+    auto p = _memoryMap->map();
     p += ofs;
-    p.bulk_write( src, size );
+    memcpy(p, src, size);
 }
 
 inline uint32_t ptree::_read_word( uint32_t ofs )
 {
-    ck_byte_ptr p = _memoryMap->map();
+    auto p = _memoryMap->map();
     p += ofs;
-    uint32_t word = p.consume<uint32_t>();
+    uint32_t word = *(uint32_t*)p;
     return ntohl( word );
 }
 
 inline int64_t ptree::_read_dword( uint32_t ofs )
 {
-    ck_byte_ptr p = _memoryMap->map();
+    auto p = _memoryMap->map();
     p += ofs;
-    int64_t dword = p.consume<int64_t>();
-    return x_ntohll( dword );
+    int64_t dword = *(int64_t*)p;
+    return ck_ntohll( dword );
 }
 
 inline uint8_t ptree::_read_byte( uint32_t ofs )
 {
-    ck_byte_ptr p = _memoryMap->map();
+    auto p = _memoryMap->map();
     p += ofs;
-    return p.consume<uint8_t>();
+    return *p;
 }
 
 uint8_t ptree::_height( uint32_t ofs )
@@ -580,23 +579,32 @@ uint32_t ptree::_create_node( int64_t key, uint32_t parent, uint8_t* src, uint32
     _write_word( CB_FREE_OFS, newNode + NODE_SIZE );
 
     uint8_t tempNode[NODE_SIZE];
-    ck_byte_ptr p( tempNode, NODE_SIZE );
+    uint8_t* p = &tempNode[0];
 
-    int64_t dword = x_htonll( key );
-    p.write<int64_t>( dword );             // key
-    p.write<uint8_t>( 1 );                 // height
-    p.write<uint8_t>( NODE_FLAG_USED );    // flags
-    p.write<uint8_t>( 0 );                 // reserved
-    p.write<uint8_t>( 0 );                 // reserved
-    p.write<uint32_t>( 0 );                // left
-    p.write<uint32_t>( 0 );                // right
-    uint32_t word = htonl( parent );
-    p.write<uint32_t>( word );             // parent
+    int64_t dword = ck_htonll( key );
+    *(int64_t*)p = dword; // key
+    p += sizeof(int64_t);
+    *(uint8_t*)p = 1; // height
+    ++p;
+    *(uint8_t*)p = NODE_FLAG_USED; // flags
+    ++p;
+    *(uint8_t*)p = 0; // reserved
+    ++p;
+    *(uint8_t*)p = 0; // reserved
+    ++p;
+    *(uint32_t*)p = 0; // left
+    p += sizeof(uint32_t);
+    *(uint32_t*)p = 0; // right
+    p += sizeof(uint32_t);
+    uint32_t word = ck_htonl( parent );
+    *(uint32_t*)p = word; // parent
+    p += sizeof(uint32_t);
     uint32_t dataRecOfs = _write_data_record( src, size );
-    word = htonl( dataRecOfs );
-    p.write<uint32_t>( word );                // node rec ofs
-    word = htonl( size );
-    p.write<uint32_t>( word );                // node rec ofs size
+    word = ck_htonl( dataRecOfs );
+    *(uint32_t*)p = word;
+    p += sizeof(uint32_t);
+    word = ck_htonl(size);
+    *(uint32_t*)p = word;
 
     _write_bytes( newNode, tempNode, NODE_SIZE );
 
@@ -708,9 +716,9 @@ void ptree::_write_journal( uint32_t ofs, uint32_t size )
         //     uint32_t  size
         //     uint8_t[] bytes
 
-        uint32_t word = htonl( pageOffset );
+        uint32_t word = ck_htonl( pageOffset );
         fwrite( &word, 1, sizeof( uint32_t ), _journalFile );
-        word = htonl( CB_PAGE_SIZE );
+        word = ck_htonl( CB_PAGE_SIZE );
         fwrite( &word, 1, sizeof( uint32_t ), _journalFile );
 
         uint8_t* src = (uint8_t*)_memoryMap->map();
@@ -718,7 +726,7 @@ void ptree::_write_journal( uint32_t ofs, uint32_t size )
 
         fwrite( src, 1, CB_PAGE_SIZE, _journalFile );
         printf("dirty page = %u\n",pageIndex);
-        ck_filecommit( _journalFile );
+        fsync(fileno(_journalFile));
 
         _dirtyPages[pageIndex] = true;
     }

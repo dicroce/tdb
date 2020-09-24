@@ -2,9 +2,8 @@
 #ifndef __tdb_ptree_h
 #define __tdb_ptree_h
 
-#include "cppkit/ck_string.h"
+#include "cppkit/ck_string_utils.h"
 #include "cppkit/ck_memory_map.h"
-#include "cppkit/ck_types.h"
 #include <stdlib.h>
 #include <memory>
 #include <map>
@@ -78,7 +77,7 @@ public:
 
     friend class iterator;
 
-    ptree( const cppkit::ck_string& path, size_t indexAllocSize );
+    ptree( const std::string& path, size_t indexAllocSize );
 
     virtual ~ptree() throw();
 
@@ -132,7 +131,7 @@ private:
 
     iterator _find( uint32_t ofs, int64_t key );
 
-    cppkit::ck_string _path;
+    std::string _path;
     FILE* _file;
     size_t _fileSize;
     std::shared_ptr<cppkit::ck_memory_map> _memoryMap;
