@@ -47,20 +47,20 @@ const uint8_t NODE_FLAG_USED = 1;
 //     uint8_t[] bytes
 
 ptree::iterator::iterator() :
-    _current( ptree::iterator::END ),
-    _tree( NULL )
+    _current(ptree::iterator::END),
+    _tree(NULL)
 {
 }
 
-ptree::iterator::iterator( uint32_t node, ptree* tree ) :
-    _current( node ),
-    _tree( tree )
+ptree::iterator::iterator(uint32_t node, ptree* tree) :
+    _current(node),
+    _tree(tree)
 {
 }
 
-ptree::iterator::iterator( const ptree::iterator& obj ) :
-    _current( obj._current ),
-    _tree( obj._tree )
+ptree::iterator::iterator(const ptree::iterator& obj) :
+    _current(obj._current),
+    _tree(obj._tree)
 {
 }
 
@@ -68,51 +68,51 @@ ptree::iterator::~iterator() throw()
 {
 }
 
-ptree::iterator& ptree::iterator::operator = ( const ptree::iterator& rhs )
+ptree::iterator& ptree::iterator::operator = (const ptree::iterator& rhs)
 {
     _current = rhs._current;
     _tree = rhs._tree;
     return *this;
 }
 
-bool ptree::iterator::operator == ( const ptree::iterator& rhs )
+bool ptree::iterator::operator == (const ptree::iterator& rhs)
 {
-    if( (_current == rhs._current) )
+    if((_current == rhs._current))
         return true;
     return false;
 }
 
-bool ptree::iterator::operator != ( const ptree::iterator& rhs )
+bool ptree::iterator::operator != (const ptree::iterator& rhs)
 {
-    if( (_current != rhs._current) )
+    if((_current != rhs._current))
         return true;
     return false;
 }
 
 ptree::iterator& ptree::iterator::operator++()
 {
-    if( _current == ptree::iterator::END )
+    if(_current == ptree::iterator::END)
         CK_THROW(("Invalid iterator."));
 
     bool incremented = _next();
-    if( !incremented )
+    if(!incremented)
         _current = ptree::iterator::END;
     return *this;
 }
 
 ptree::iterator ptree::iterator::operator++(int)
 {
-    if( _current == ptree::iterator::END )
+    if(_current == ptree::iterator::END)
         CK_THROW(("Invalid iterator."));
 
-    ptree::iterator tmp( *this );
+    ptree::iterator tmp(*this);
     this->operator++();
     return tmp;
 }
 
 ptree::iterator& ptree::iterator::operator--()
 {
-    if( _current == ptree::iterator::END )
+    if(_current == ptree::iterator::END)
         CK_THROW(("Invalid iterator."));
 
     _prev();
@@ -122,60 +122,60 @@ ptree::iterator& ptree::iterator::operator--()
 
 ptree::iterator ptree::iterator::operator--(int)
 {
-    if( _current == ptree::iterator::END )
+    if(_current == ptree::iterator::END)
         CK_THROW(("Invalid iterator."));
 
-    ptree::iterator tmp( *this );
+    ptree::iterator tmp(*this);
     this->operator--();
     return tmp;
 }
 
 int64_t ptree::iterator::key()
 {
-    if( _current == ptree::iterator::END )
+    if(_current == ptree::iterator::END)
         CK_THROW(("Invalid iterator."));
 
-    return _tree->_read_dword( _current + NODE_KEY_OFS );
+    return _tree->_read_dword(_current + NODE_KEY_OFS);
 }
 
 uint32_t ptree::iterator::data_size()
 {
-    if( _current == ptree::iterator::END )
+    if(_current == ptree::iterator::END)
         CK_THROW(("Invalid iterator."));
 
-    return _tree->_read_word( _current + NODE_REC_SIZE_OFS );
+    return _tree->_read_word(_current + NODE_REC_SIZE_OFS);
 }
 
 uint8_t* ptree::iterator::data_ptr()
 {
-    if( _current == ptree::iterator::END )
+    if(_current == ptree::iterator::END)
         CK_THROW(("Invalid iterator."));
 
-    return _tree->_memoryMap->map() + _tree->_read_word( _current + NODE_REC_OFS );
+    return _tree->_memoryMap->map() + _tree->_read_word(_current + NODE_REC_OFS);
 }
 
 // walking a tree without recursion is surprisingly complicated... :)
 bool ptree::iterator::_prev()
 {
-    if( _tree->_read_word( _current + NODE_LEFT_OFS ) != 0 )
+    if(_tree->_read_word(_current + NODE_LEFT_OFS) != 0)
     {
-        _current = _tree->_read_word( _current + NODE_LEFT_OFS );
-        while( _tree->_read_word( _current + NODE_RIGHT_OFS ) != 0 )
-            _current = _tree->_read_word( _current + NODE_RIGHT_OFS );
+        _current = _tree->_read_word(_current + NODE_LEFT_OFS);
+        while(_tree->_read_word(_current + NODE_RIGHT_OFS) != 0)
+            _current = _tree->_read_word(_current + NODE_RIGHT_OFS);
         return true;
     }
     else
     {
-        uint32_t p = _tree->_read_word( _current + NODE_PARENT_OFS );
-        while( p != 0 && _current == _tree->_read_word( p + NODE_LEFT_OFS ) )
+        uint32_t p = _tree->_read_word(_current + NODE_PARENT_OFS);
+        while(p != 0 && _current == _tree->_read_word(p + NODE_LEFT_OFS))
         {
             _current = p;
-            p = _tree->_read_word( _current + NODE_PARENT_OFS );
+            p = _tree->_read_word(_current + NODE_PARENT_OFS);
         }
 
         _current = p;
 
-        if( _current )
+        if(_current)
             return true;
         return false;
     }
