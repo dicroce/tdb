@@ -27,6 +27,9 @@ void test_tdb::test_basic()
         ptree t( "data.db", 1024*1024*5 );
     
         t.insert( 100, dumbRecord, 10 );
+        t.insert( 22, dumbRecord, 10 );
+        t.insert( 72, dumbRecord, 10 );
+        t.insert( 35, dumbRecord, 10 );
     }
 
     {
