@@ -1,6 +1,7 @@
 
 #include "test_tdb.h"
 #include "tdb/ptree.h"
+#include "tdb/graphics.h"
 #include <vector>
 #include <unistd.h>
 #include <string.h>
@@ -42,4 +43,8 @@ void test_tdb::test_basic()
 
         RTF_ASSERT(memcmp(dumbRecord, &val[0], 10) == 0);
     }
+
+    uint32_t w, h, color_max;
+    auto buffer = ppm_buffer_to_argb(__0_ppm, __0_ppm_len, w, h, color_max);
+
 }

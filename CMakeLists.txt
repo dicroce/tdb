@@ -26,6 +26,7 @@ endif()
 # tdb
 
 add_library (tdb include/tdb/ptree.h
+                 include/tdb/graphics.h
                  source/ptree.cpp)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
