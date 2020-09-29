@@ -27,7 +27,8 @@ endif()
 
 add_library (tdb include/tdb/ptree.h
                  include/tdb/graphics.h
-                 source/ptree.cpp)
+                 source/ptree.cpp
+                 source/graphics.cpp)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(tdb PUBLIC "-O0")

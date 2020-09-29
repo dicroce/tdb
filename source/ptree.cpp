@@ -1,5 +1,6 @@
 
 #include "tdb/ptree.h"
+#include "tdb/graphics.h"
 #include "cppkit/ck_exception.h"
 #include "cppkit/ck_file.h"
 #include "cppkit/ck_socket.h"
@@ -414,6 +415,34 @@ ptree::iterator ptree::find( int64_t key )
 {
     return _find( _read_word( CB_ROOT_OFS ), key );
 }
+
+void ptree::draw_tree(std::shared_ptr<std::vector<uint8_t>> pixels,
+                      uint32_t w,
+                      uint32_t h)
+{
+    uint32_t root = _read_word( CB_ROOT_OFS );
+
+    uint32_t max_depth = 0;
+
+    _inorder(root, [pixels, w, h, &max_depth](int64_t key, int32_t pos, uint32_t levels){
+
+        if(max_depth == 0)
+            max_depth = levels;
+
+        int y = 10 + (levels * 50);
+
+        int splay = (int)(((float)levels / (float)max_depth) * 50);
+
+        //(int)(((float)levels / (float)max_depth) * 50)
+
+        int x = w/2 + (pos * (int)(((float)levels / (float)max_depth) * 50));
+
+        draw_line_rect(pixels, w, h, x, y, 50, 30, 255, 0, 0);
+
+        render_text(pixels, w, h, ck_string_utils::int64_to_s(key).c_str(), x+3, y+3);
+    }, 0, 0);
+}
+
 
 void ptree::_initialize_new_file()
 {

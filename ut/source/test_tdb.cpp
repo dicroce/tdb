@@ -44,7 +44,60 @@ void test_tdb::test_basic()
         RTF_ASSERT(memcmp(dumbRecord, &val[0], 10) == 0);
     }
 
+    {
+        ptree t( "data.db", 1024*1024*5 );
+
+        auto img = make_shared<vector<uint8_t>>(1280*4*720);    
+
+        t.draw_tree(img, 1280, 720);
+
+        argb_to_ppm_file("out.ppm",
+                        img,
+                        1280,
+                        720);
+
+    }
+
+#if 0
     uint32_t w, h, color_max;
     auto buffer = ppm_buffer_to_argb(__0_ppm, __0_ppm_len, w, h, color_max);
 
+    auto img = make_shared<vector<uint8_t>>(1280*4*720);
+
+    memset(&(*img)[0], 0, img->size());
+
+    render_text(img,
+                     1280,
+                     720, 
+                     "test", 
+                     100, 
+                     300);
+
+    draw_line(img,
+              1280,
+              720,
+              100,
+              100,
+              1100,
+              600,
+              255,
+              0,
+              0);
+
+    draw_line_rect(img,
+                   1280,
+                   720,
+                   610,
+                   100,
+                   150,
+                   190,
+                   0,
+                   255,
+                   0);
+
+    argb_to_ppm_file("out.ppm",
+                     img,
+                     1280,
+                     720);
+#endif
 }

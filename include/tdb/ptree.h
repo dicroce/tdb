@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <memory>
 #include <map>
+#include <vector>
 
 namespace tdb
 {
@@ -95,6 +96,10 @@ public:
     iterator end();
     iterator find( int64_t key );
 
+    void draw_tree(std::shared_ptr<std::vector<uint8_t>> pixels,
+                   uint32_t w,
+                   uint32_t h);
+
 private:
     void _initialize_new_file();
 
@@ -119,6 +124,26 @@ private:
     uint32_t _write_data_record( uint8_t* src, uint32_t size );
 
     uint32_t _insert( uint32_t p, uint32_t parent, int64_t key, uint8_t* src, uint32_t size  );
+
+    template<typename F>
+    void _inorder(uint32_t p, F f, int32_t pos, uint32_t levels)
+    {
+//const uint32_t NODE_KEY_OFS = 0;         // int64_t
+//const uint32_t NODE_LEFT_OFS = 12;       // uint32_t
+//const uint32_t NODE_RIGHT_OFS = 16;      // uint32_t
+
+        auto key = _read_dword(p + 0);
+        auto left = _read_word(p + 12);
+        auto right = _read_word(p + 16);
+
+        if(left != 0)
+            _inorder(left, f, pos-1, levels+1);
+
+        f(key, pos, levels);
+
+        if(right != 0)
+            _inorder(right, f, pos+1, levels+1);
+    }
 
     uint32_t _find_min( uint32_t p );
     uint32_t _remove_min( uint32_t p );
