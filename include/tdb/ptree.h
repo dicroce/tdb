@@ -101,6 +101,42 @@ public:
                    uint32_t h);
 
 private:
+    // Node
+    //     int64_t key         0 - 7
+    //     uint8_t height          8
+    //     uint8_t flags           9
+    //     uint16_t reserved   10 - 11
+    //     uint32_t left       12 - 15
+    //     uint32_t right      16 - 19
+    //     uint32_t parent     20 - 23
+    //     uint32_t recordOffset  24 - 27
+    //     uint32_t size          28 - 31
+    //
+    // Journal Entry
+    //     uint32_t  ofs
+    //     uint32_t  size
+    //     uint8_t[] bytes
+
+    static const uint32_t HEADER_SIZE = 64;
+
+    static const uint32_t CB_VERSION_OFS = 0;
+    static const uint32_t CB_ROOT_OFS = 4;
+    static const uint32_t CB_FREE_OFS = 8;
+    static const uint32_t CB_DATA_FREE_OFS = 12;
+    static const uint32_t CB_PAGE_SIZE = 4096;
+
+    static const uint32_t NODE_SIZE = 32;
+
+    static const uint32_t NODE_KEY_OFS = 0;         // int64_t
+    static const uint32_t NODE_HEIGHT_OFS = 8;      // uint8_t
+    static const uint32_t NODE_FLAGS_OFS = 9;       // uint8_t
+    static const uint32_t NODE_LEFT_OFS = 12;       // uint32_t
+    static const uint32_t NODE_RIGHT_OFS = 16;      // uint32_t
+    static const uint32_t NODE_PARENT_OFS = 20;     // uint32_t
+    static const uint32_t NODE_REC_OFS = 24;        // uint32_t
+    static const uint32_t NODE_REC_SIZE_OFS = 28;   // uint32_t
+    static const uint8_t NODE_FLAG_USED = 1;
+
     void _initialize_new_file();
 
     void _write_word( uint32_t ofs, uint32_t val );
@@ -126,23 +162,24 @@ private:
     uint32_t _insert( uint32_t p, uint32_t parent, int64_t key, uint8_t* src, uint32_t size  );
 
     template<typename F>
-    void _inorder(uint32_t p, F f, int32_t pos, uint32_t levels)
+    void _inorder(uint32_t p, F f, uint32_t px, uint32_t py, bool lc, uint32_t level)
     {
-//const uint32_t NODE_KEY_OFS = 0;         // int64_t
-//const uint32_t NODE_LEFT_OFS = 12;       // uint32_t
-//const uint32_t NODE_RIGHT_OFS = 16;      // uint32_t
+        auto key = _read_dword(p + NODE_KEY_OFS);
+        auto left = _read_word(p + NODE_LEFT_OFS);
+        auto right = _read_word(p + NODE_RIGHT_OFS);
 
-        auto key = _read_dword(p + 0);
-        auto left = _read_word(p + 12);
-        auto right = _read_word(p + 16);
+        auto mfactor = 5 - level;
+
+        uint32_t nx = (lc)?px-(60*mfactor):px+(60*mfactor);
+        uint32_t ny = py + 60;
 
         if(left != 0)
-            _inorder(left, f, pos-1, levels+1);
+            _inorder(left, f, nx, ny, true, level+1);
 
-        f(key, pos, levels);
+        f(key, nx, ny);
 
         if(right != 0)
-            _inorder(right, f, pos+1, levels+1);
+            _inorder(right, f, nx, ny, false, level+1);
     }
 
     uint32_t _find_min( uint32_t p );

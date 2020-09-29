@@ -10,43 +10,6 @@ using namespace cppkit;
 using namespace ck_networking;
 using namespace std;
 
-const uint32_t HEADER_SIZE = 64;
-
-const uint32_t CB_VERSION_OFS = 0;
-const uint32_t CB_ROOT_OFS = 4;
-const uint32_t CB_FREE_OFS = 8;
-const uint32_t CB_DATA_FREE_OFS = 12;
-const uint32_t CB_PAGE_SIZE = 4096;
-
-const uint32_t NODE_SIZE = 32;
-
-const uint32_t NODE_KEY_OFS = 0;         // int64_t
-const uint32_t NODE_HEIGHT_OFS = 8;      // uint8_t
-const uint32_t NODE_FLAGS_OFS = 9;       // uint8_t
-const uint32_t NODE_LEFT_OFS = 12;       // uint32_t
-const uint32_t NODE_RIGHT_OFS = 16;      // uint32_t
-const uint32_t NODE_PARENT_OFS = 20;     // uint32_t
-const uint32_t NODE_REC_OFS = 24;        // uint32_t
-const uint32_t NODE_REC_SIZE_OFS = 28;   // uint32_t
-
-const uint8_t NODE_FLAG_USED = 1;
-
-// Node
-//     int64_t key         0 - 7
-//     uint8_t height          8
-//     uint8_t flags           9
-//     uint16_t reserved   10 - 11
-//     uint32_t left       12 - 15
-//     uint32_t right      16 - 19
-//     uint32_t parent     20 - 23
-//     uint32_t recordOffset  24 - 27
-//     uint32_t size          28 - 31
-//
-// Journal Entry
-//     uint32_t  ofs
-//     uint32_t  size
-//     uint8_t[] bytes
-
 ptree::iterator::iterator() :
     _current(ptree::iterator::END),
     _tree(NULL)
@@ -422,42 +385,10 @@ void ptree::draw_tree(std::shared_ptr<std::vector<uint8_t>> pixels,
 {
     uint32_t root = _read_word( CB_ROOT_OFS );
 
-    uint32_t max_depth = 0;
-
-    map<uint32_t, vector<int64_t>> level_map;
-
-    _inorder(root, [pixels, w, h, &max_depth, &level_map](int64_t key, int32_t pos, uint32_t levels){
-        level_map[levels].push_back(key);
-
-//        if(max_depth == 0)
-//            max_depth = levels;
-
-//        int y = 10 + (levels * 50);
-
-//        int splay = (int)(((float)levels / (float)max_depth) * 50);
-
-        //(int)(((float)levels / (float)max_depth) * 50)
-
-//        int x = w/2 + (pos * (int)(((float)levels / (float)max_depth) * 50));
-
-//        draw_line_rect(pixels, w, h, x, y, 50, 30, 255, 0, 0);
-
-//        render_text(pixels, w, h, ck_string_utils::int64_to_s(key).c_str(), x+3, y+3);
-    }, 0, 0);
-
-    int y = 10;
-    for(auto level: level_map) {
-        auto num_items = level.second.size();
-        auto row_width = num_items * 60;
-        int x = (w/2) - (row_width / 2);
-        for(int i = 0; i < num_items; ++i) {
-            draw_line_rect(pixels, w, h, x, y, 50, 30, 255, 0, 0);
-            render_text(pixels, w, h, ck_string_utils::int64_to_s(level.second[i]).c_str(), x+3, y+3);
-            x += 60;
-        }
-        y += 40;
-    }
-
+    _inorder(root, [pixels, w, h](int64_t key, uint32_t x, uint32_t y){
+        draw_line_rect(pixels, w, h, x, y, 50, 30, 255, 0, 0);
+        render_text(pixels, w, h, ck_string_utils::int64_to_s(key).c_str(), x+3, y+3);
+    }, (w/2)-240, 10, false, 1);
 }
 
 

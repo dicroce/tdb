@@ -36,9 +36,6 @@ void test_tdb::test_basic()
         t.insert( 34, dumbRecord, 10 );
         t.insert( 99, dumbRecord, 10 );
         t.insert( 89, dumbRecord, 10 );
-
-
-
     }
 
     {
