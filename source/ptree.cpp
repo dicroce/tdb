@@ -424,23 +424,40 @@ void ptree::draw_tree(std::shared_ptr<std::vector<uint8_t>> pixels,
 
     uint32_t max_depth = 0;
 
-    _inorder(root, [pixels, w, h, &max_depth](int64_t key, int32_t pos, uint32_t levels){
+    map<uint32_t, vector<int64_t>> level_map;
 
-        if(max_depth == 0)
-            max_depth = levels;
+    _inorder(root, [pixels, w, h, &max_depth, &level_map](int64_t key, int32_t pos, uint32_t levels){
+        level_map[levels].push_back(key);
 
-        int y = 10 + (levels * 50);
+//        if(max_depth == 0)
+//            max_depth = levels;
 
-        int splay = (int)(((float)levels / (float)max_depth) * 50);
+//        int y = 10 + (levels * 50);
+
+//        int splay = (int)(((float)levels / (float)max_depth) * 50);
 
         //(int)(((float)levels / (float)max_depth) * 50)
 
-        int x = w/2 + (pos * (int)(((float)levels / (float)max_depth) * 50));
+//        int x = w/2 + (pos * (int)(((float)levels / (float)max_depth) * 50));
 
-        draw_line_rect(pixels, w, h, x, y, 50, 30, 255, 0, 0);
+//        draw_line_rect(pixels, w, h, x, y, 50, 30, 255, 0, 0);
 
-        render_text(pixels, w, h, ck_string_utils::int64_to_s(key).c_str(), x+3, y+3);
+//        render_text(pixels, w, h, ck_string_utils::int64_to_s(key).c_str(), x+3, y+3);
     }, 0, 0);
+
+    int y = 10;
+    for(auto level: level_map) {
+        auto num_items = level.second.size();
+        auto row_width = num_items * 60;
+        int x = (w/2) - (row_width / 2);
+        for(int i = 0; i < num_items; ++i) {
+            draw_line_rect(pixels, w, h, x, y, 50, 30, 255, 0, 0);
+            render_text(pixels, w, h, ck_string_utils::int64_to_s(level.second[i]).c_str(), x+3, y+3);
+            x += 60;
+        }
+        y += 40;
+    }
+
 }
 
 

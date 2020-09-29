@@ -31,6 +31,14 @@ void test_tdb::test_basic()
         t.insert( 22, dumbRecord, 10 );
         t.insert( 72, dumbRecord, 10 );
         t.insert( 35, dumbRecord, 10 );
+        t.insert( 88, dumbRecord, 10 );
+        t.insert( 0, dumbRecord, 10 );
+        t.insert( 34, dumbRecord, 10 );
+        t.insert( 99, dumbRecord, 10 );
+        t.insert( 89, dumbRecord, 10 );
+
+
+
     }
 
     {
@@ -47,14 +55,14 @@ void test_tdb::test_basic()
     {
         ptree t( "data.db", 1024*1024*5 );
 
-        auto img = make_shared<vector<uint8_t>>(1280*4*720);    
+        auto img = make_shared<vector<uint8_t>>(1920*4*1920);    
 
-        t.draw_tree(img, 1280, 720);
+        t.draw_tree(img, 1920, 1920);
 
         argb_to_ppm_file("out.ppm",
                         img,
-                        1280,
-                        720);
+                        1920,
+                        1920);
 
     }
 
