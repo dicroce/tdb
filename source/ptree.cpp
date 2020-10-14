@@ -528,7 +528,8 @@ uint32_t ptree::_rotate_left( uint32_t q )
 
 uint32_t ptree::_balance( uint32_t p )
 {
-    _fix_height( p );
+    _fix_height( p ); // set our height to height of highest child + 1
+
     if( _balance_factor( p ) == 2 )
     {
         if( _balance_factor( _read_word( p + NODE_RIGHT_OFS ) ) < 0 )
@@ -640,6 +641,8 @@ uint32_t ptree::_remove_min( uint32_t p )
 
 uint32_t ptree::_remove( uint32_t p, int64_t k )
 {
+    printf("==>_remove()\n");
+    fflush(stdout);
     if( p == 0 ) return 0;
     if( k < _read_dword( p + NODE_KEY_OFS ) )
         _write_word( p + NODE_LEFT_OFS, _remove( _read_word( p + NODE_LEFT_OFS ), k ) );
@@ -647,22 +650,44 @@ uint32_t ptree::_remove( uint32_t p, int64_t k )
         _write_word( p + NODE_RIGHT_OFS, _remove( _read_word( p + NODE_RIGHT_OFS ), k ) );
     else
     {
+        printf("   found target node to remove\n");
+        fflush(stdout);
+
         uint32_t q = _read_word( p + NODE_LEFT_OFS );
         uint32_t r = _read_word( p + NODE_RIGHT_OFS );
+
         uint32_t targetParent = _read_word( p + NODE_PARENT_OFS );
 
         // eventually, if flags actually has multiple fields we cant do this this way!
         _write_byte( p + NODE_FLAGS_OFS, 0 );
 
-        if( q != 0 )
-            _write_word( q + NODE_PARENT_OFS, targetParent );     // **********
+        printf("   overwrite flags\n");
+        fflush(stdout);
+
+//        if( q != 0 )
+//        {
+//            printf("       left subtree so rewriting left subtree parent to our parent\n");
+//            fflush(stdout);
+//
+//            _write_word( q + NODE_PARENT_OFS, targetParent );     // **********
+//        }
+
 
         // if our target node has no right subtree, return our left subtree...
         if( r == 0 )
+        {
+            printf("   no right subtree so returning our left subtree\n");
+            fflush(stdout);
+
             return q;
+        }
+
 
         // else find the smallest key in our right subtree...
         uint32_t min = _find_min( r );
+        printf("   min in right subtree = %u\n", min);
+        fflush(stdout);
+
 
         uint32_t removedMin = _remove_min( r );
         _write_word( removedMin + NODE_PARENT_OFS, min );     // **********
@@ -672,6 +697,9 @@ uint32_t ptree::_remove( uint32_t p, int64_t k )
         _write_word( q + NODE_PARENT_OFS, min );              // **********
 
         _write_word( min + NODE_LEFT_OFS, q );
+
+        _write_word( min + NODE_PARENT_OFS, targetParent );
+
         return _balance( min );
     }
     return _balance( p );
@@ -733,3 +761,116 @@ ptree::iterator ptree::_find( uint32_t ofs, int64_t key )
         return _find( _read_word( ofs + NODE_RIGHT_OFS ), key );
     else return iterator( ofs, this );
 }
+
+
+
+
+#if 0
+struct node
+{
+    int key;
+    unsigned char height;
+    node* left;
+    node* right;
+    node(int k) { key = k; left = right = 0; height = 1; }
+};
+
+unsigned char height(node* p)
+{
+    return p?p->height:0;
+}
+
+int bfactor(node* p)
+{
+    return height(p->right)-height(p->left);
+}
+
+void fixheight(node* p)
+{
+    unsigned char hl = height(p->left);
+    unsigned char hr = height(p->right);
+    p->height = (hl>hr?hl:hr)+1;
+}
+
+node* rotateright(node* p)
+{
+    node* q = p->left;
+    p->left = q->right;
+    q->right = p;
+    fixheight(p);
+    fixheight(q);
+    return q;
+}
+
+node* rotateleft(node* q)
+{
+    node* p = q->right;
+    q->right = p->left;
+    p->left = q;
+    fixheight(q);
+    fixheight(p);
+    return p;
+}
+
+node* balance(node* p) // balancing the p node
+{
+    fixheight(p);
+    if( bfactor(p)==2 )
+    {
+        if( bfactor(p->right) < 0 )
+            p->right = rotateright(p->right);
+        return rotateleft(p);
+    }
+    if( bfactor(p)==-2 )
+    {
+        if( bfactor(p->left) > 0  )
+            p->left = rotateleft(p->left);
+        return rotateright(p);
+    }
+    return p; // balancing is not required
+}
+
+node* insert(node* p, int k) // insert k key in a tree with p root
+{
+    if( !p ) return new node(k);
+    if( k<p->key )
+        p->left = insert(p->left,k);
+    else
+        p->right = insert(p->right,k);
+    return balance(p);
+}
+
+node* findmin(node* p) // find a node with minimal key in a p tree 
+{
+    return p->left?findmin(p->left):p;
+}
+
+node* removemin(node* p) // deleting a node with minimal key from a p tree
+{
+    if( p->left==0 )
+        return p->right;
+    p->left = removemin(p->left);
+    return balance(p);
+}
+
+node* remove(node* p, int k) // deleting k key from p tree
+{
+    if( !p ) return 0;
+    if( k < p->key )
+        p->left = remove(p->left,k);
+    else if( k > p->key )
+        p->right = remove(p->right,k);	
+    else //  k == p->key 
+    {
+        node* q = p->left;
+        node* r = p->right;
+        delete p;
+        if( !r ) return q;
+        node* min = findmin®;
+        min->right = removemin®;
+        min->left = q;
+        return balance(min);
+    }
+    return balance(p);
+}
+#endif

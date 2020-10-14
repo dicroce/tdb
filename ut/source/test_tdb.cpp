@@ -36,6 +36,24 @@ void test_tdb::test_basic()
         t.insert( 34, dumbRecord, 10 );
         t.insert( 99, dumbRecord, 10 );
         t.insert( 89, dumbRecord, 10 );
+
+        t.remove( 88 );
+        t.remove( 22 ); // Right up to this point
+        t.remove( 72 ); // hosed now
+
+        t.insert( 123, dumbRecord, 10 );
+        t.insert( 73, dumbRecord, 10 );
+        t.insert( 96, dumbRecord, 10 );
+        t.insert( 21, dumbRecord, 10 );
+        t.insert( 91, dumbRecord, 10 );
+        t.insert( 36, dumbRecord, 10 );
+        t.insert( 1, dumbRecord, 10 );
+        t.insert( 149, dumbRecord, 10 );
+        t.insert( 42, dumbRecord, 10 );
+
+        t.remove( 42 );
+
+        t.insert( 121, dumbRecord, 10 );
     }
 
     {
