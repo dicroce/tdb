@@ -7,22 +7,9 @@ b_tree::b_tree(const std::string& file_name) :
 {
 }
 
-void b_tree::traverse()
+void b_tree::create_db_file(const std::string& file_name)
 {
-    auto root_ofs = _p.root_ofs();
-    if(root_ofs == 0)
-        throw std::runtime_error("empty tree");
-    b_tree_node root_node(_p, root_ofs);
-    root_node._traverse();
-}
-
-b_tree_node b_tree::search(int64_t k)
-{
-    auto root_ofs = _p.root_ofs();
-    if(root_ofs == 0)
-        throw std::runtime_error("empty tree");
-    b_tree_node root_node(_p, root_ofs);
-    return root_node._search(k);
+    pager::create(file_name);
 }
 
 void b_tree::insert(int64_t k, uint64_t v)
@@ -33,6 +20,7 @@ void b_tree::insert(int64_t k, uint64_t v)
         auto new_root_ofs = _p.append_page();
         b_tree_node new_root_node(_p, new_root_ofs, _degree, true);
         new_root_node.set_key(0, k);
+        new_root_node.set_val(0, v);
         new_root_node.set_num_keys(1);
 
         _p.set_root_ofs(new_root_ofs);
@@ -53,16 +41,29 @@ void b_tree::insert(int64_t k, uint64_t v)
             if(new_root_node.key(i) < k)
                 ++i;
             auto new_child = b_tree_node(_p, new_root_node.child_ofs(i));
-            new_child._insert_non_full(k);
+            new_child._insert_non_full(k, v);
 
             // Change root
             _p.set_root_ofs(new_root_ofs);
         }
         else
         {
-            old_root._insert_non_full(k);
+            old_root._insert_non_full(k, v);
         }
     }
+}
+
+std::optional<uint64_t> b_tree::search(int64_t k)
+{
+    auto root_ofs = _p.root_ofs();
+    if(root_ofs == 0)
+        throw std::runtime_error("empty tree");
+    b_tree_node root_node(_p, root_ofs);
+    auto search_results = root_node._search(k);
+    std::optional<uint64_t> result;
+    if(!search_results.first.is_empty())
+        result = search_results.first.val(search_results.second);
+    return result;
 }
 
 void b_tree::render_to_dot_file(const std::string& file_name)
@@ -75,6 +76,15 @@ void b_tree::render_to_dot_file(const std::string& file_name)
     tree += "}\n";
     std::shared_ptr<FILE> fp(fopen(file_name.c_str(), "w"), fclose);
     fprintf(fp.get(), "%s", tree.c_str());
+}
+
+void b_tree::traverse()
+{
+    auto root_ofs = _p.root_ofs();
+    if(root_ofs == 0)
+        throw std::runtime_error("empty tree");
+    b_tree_node root_node(_p, root_ofs);
+    root_node._traverse();
 }
 
 void b_tree::_build_dot_tree(uint64_t root_ofs, std::string& tree, int nodeNum)
