@@ -42,11 +42,11 @@ b_tree_node::b_tree_node(const pager& p, uint64_t ofs) :
 
     // read the keys
     _keys = (int64_t*)read_ptr;
-    read_ptr += sizeof(int64_t) * ((degree() ) - 1);
+    read_ptr += sizeof(int64_t) * (degree() - 1);
 
     // read the vals
     _vals = (uint64_t*)read_ptr;
-    read_ptr += sizeof(uint64_t) * ((degree() ) - 1);
+    read_ptr += sizeof(uint64_t) * (degree() - 1);
 
     // read the child offsets
     _child_ofs = (uint64_t*)read_ptr;
@@ -76,18 +76,18 @@ b_tree_node::b_tree_node(const pager& p, uint64_t ofs, int degree, bool leaf) :
     write_ptr += sizeof(uint16_t);
     
     // write the keys
-    memset(write_ptr, 0, sizeof(int64_t) * ((degree) - 1));
+    memset(write_ptr, 0, sizeof(int64_t) * (degree - 1));
     _keys = (int64_t*)write_ptr;
-    write_ptr += sizeof(int64_t) * ((degree) - 1);
+    write_ptr += sizeof(int64_t) * (degree - 1);
 
     // write the vals
-    memset(write_ptr, 0, sizeof(uint64_t) * ((degree) - 1));
+    memset(write_ptr, 0, sizeof(uint64_t) * (degree - 1));
     _vals = (uint64_t*)write_ptr;
-    write_ptr += sizeof(uint64_t) * ((degree) - 1);
+    write_ptr += sizeof(uint64_t) * (degree - 1);
 
     // write the child offsets
     _child_ofs = (uint64_t*)write_ptr;
-    memset(write_ptr, 0, sizeof(uint64_t) * (degree));
+    memset(write_ptr, 0, sizeof(uint64_t) * degree);
 }
 
 b_tree_node::b_tree_node(const b_tree_node& obj) :
@@ -120,11 +120,11 @@ b_tree_node::b_tree_node(const b_tree_node& obj) :
 
     // read the keys
     _keys = (int64_t*)read_ptr;
-    read_ptr += sizeof(int64_t) * ((degree() ) - 1);
+    read_ptr += sizeof(int64_t) * (degree() - 1);
 
     // read the vals
     _vals = (uint64_t*)read_ptr;
-    read_ptr += sizeof(uint64_t) * ((degree() ) - 1);
+    read_ptr += sizeof(uint64_t) * (degree() - 1);
 
     // read the child offsets
     _child_ofs = (uint64_t*)read_ptr;
@@ -157,11 +157,11 @@ b_tree_node& b_tree_node::operator=(const b_tree_node& obj)
 
         // read the keys
         _keys = (int64_t*)read_ptr;
-        read_ptr += sizeof(int64_t) * ((degree() ) - 1);
+        read_ptr += sizeof(int64_t) * (degree() - 1);
 
         // read the vals
         _vals = (uint64_t*)read_ptr;
-        read_ptr += sizeof(uint64_t) * ((degree() ) - 1);
+        read_ptr += sizeof(uint64_t) * (degree() - 1);
 
         // read the child offsets
         _child_ofs = (uint64_t*)read_ptr;
