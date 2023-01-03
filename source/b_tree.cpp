@@ -1,13 +1,15 @@
 #include "tdb/b_tree.h"
 
-b_tree::b_tree(const std::string& file_name) :
+using namespace std;
+
+b_tree::b_tree(const string& file_name) :
     _file_name(file_name),
     _p(file_name),
     _degree(4)
 {
 }
 
-void b_tree::create_db_file(const std::string& file_name)
+void b_tree::create_db_file(const string& file_name)
 {
     pager::create(file_name);
 }
@@ -53,28 +55,28 @@ void b_tree::insert(int64_t k, uint64_t v)
     }
 }
 
-std::optional<uint64_t> b_tree::search(int64_t k)
+optional<uint64_t> b_tree::search(int64_t k)
 {
     auto root_ofs = _p.root_ofs();
     if(root_ofs == 0)
-        throw std::runtime_error("empty tree");
+        throw runtime_error("empty tree");
     b_tree_node root_node(_p, root_ofs);
     auto search_results = root_node._search(k);
-    std::optional<uint64_t> result;
+    optional<uint64_t> result;
     if(search_results)
         result = search_results->first.val(search_results->second);
     return result;
 }
 
-void b_tree::render_to_dot_file(const std::string& file_name)
+void b_tree::render_to_dot_file(const string& file_name)
 {
     auto root_ofs = _p.root_ofs();
 
-    std::string tree;
+    string tree;
     tree = "digraph G {\n";
     _build_dot_tree(root_ofs, tree);
     tree += "}\n";
-    std::shared_ptr<FILE> fp(fopen(file_name.c_str(), "w"), fclose);
+    shared_ptr<FILE> fp(fopen(file_name.c_str(), "w"), fclose);
     fprintf(fp.get(), "%s", tree.c_str());
 }
 
@@ -82,19 +84,19 @@ void b_tree::traverse()
 {
     auto root_ofs = _p.root_ofs();
     if(root_ofs == 0)
-        throw std::runtime_error("empty tree");
+        throw runtime_error("empty tree");
     b_tree_node root_node(_p, root_ofs);
     root_node._traverse();
 }
 
-void b_tree::_build_dot_tree(uint64_t root_ofs, std::string& tree, int nodeNum)
+void b_tree::_build_dot_tree(uint64_t root_ofs, string& tree, int nodeNum)
 {
     auto root = b_tree_node(_p, root_ofs);
 
     // Print the root node
-    tree += "node" + std::to_string(nodeNum) + " [label=\"";
+    tree += "node" + to_string(nodeNum) + " [label=\"";
     for(int i = 0; i < root.num_keys(); ++i)
-        tree += std::to_string(root.key(i)) + " ";
+        tree += to_string(root.key(i)) + " ";
     tree += "\"]\n";
 
     auto n_keys = root.num_keys();
@@ -104,7 +106,7 @@ void b_tree::_build_dot_tree(uint64_t root_ofs, std::string& tree, int nodeNum)
     {
         if(root.child_ofs(i) != 0)
         {
-            tree += "node" + std::to_string(nodeNum) + " -> node" + std::to_string(nodeNum*10+childNum) + "\n";
+            tree += "node" + to_string(nodeNum) + " -> node" + to_string(nodeNum*10+childNum) + "\n";
             _build_dot_tree(root.child_ofs(i), tree, nodeNum*10+childNum);
             ++childNum;
         }

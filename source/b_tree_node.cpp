@@ -297,10 +297,8 @@ void b_tree_node::_traverse()
     }
 }
 
-optional<pair<b_tree_node, uint16_t>> b_tree_node::_search(int64_t k)   // returns NULL if k is not present.
+optional<pair<b_tree_node, uint16_t>> b_tree_node::_search(int64_t k)
 {
-    optional<pair<b_tree_node, uint16_t>> result;
-
     // Find the first key greater than or equal to k
     int i = 0;
     while(i < num_keys() && k > key(i))
@@ -308,14 +306,11 @@ optional<pair<b_tree_node, uint16_t>> b_tree_node::_search(int64_t k)   // retur
 
     // If the found key is equal to k, return this node
     if(key(i) == k)
-    {
-        result = make_pair(*this, i);
-        return result;
-    }
-
+        return make_pair(*this, i);
+ 
     // If key is not found here and this is a leaf node
     if(leaf())
-        return result;
+        return optional<pair<b_tree_node, uint16_t>>();
 
     // Go to the appropriate child
     return b_tree_node(_p, child_ofs(i))._search(k);

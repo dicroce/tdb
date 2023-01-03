@@ -9,6 +9,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <sys/types.h>
+
+using namespace std;
     
 r_file::r_file() :
     _f(nullptr) 
@@ -16,7 +18,7 @@ r_file::r_file() :
 }
 
 r_file::r_file(r_file&& obj) noexcept :
-    _f(std::move(obj._f))
+    _f(move(obj._f))
 {
     obj._f = nullptr;
 }
@@ -32,17 +34,17 @@ r_file& r_file::operator = (r_file&& obj) noexcept
     if(_f)
         fclose(_f);
 
-    _f = std::move(obj._f);
+    _f = move(obj._f);
     obj._f = nullptr;
     return *this;
 }
 
-r_file r_file::open(const std::string& path, const std::string& mode)
+r_file r_file::open(const string& path, const string& mode)
 {
     r_file obj;
     obj._f = fopen(path.c_str(), mode.c_str());
     if(!obj._f)
-        throw std::runtime_error("Unable to open: " + path);
+        throw runtime_error("Unable to open: " + path);
     return obj;
 }
 
@@ -60,9 +62,9 @@ r_memory_map::r_memory_map() :
 }
 
 r_memory_map::r_memory_map(r_memory_map&& obj) noexcept :
-    _mem(std::move(obj._mem)),
-    _length(std::move(obj._length)),
-    _mapOffset(std::move(obj._mapOffset))
+    _mem(move(obj._mem)),
+    _length(move(obj._length)),
+    _mapOffset(move(obj._mapOffset))
 {
     obj._mem = NULL;
     obj._length = 0;
@@ -75,16 +77,16 @@ r_memory_map::r_memory_map(int fd, uint64_t offset, uint64_t len, uint32_t prot,
     _mapOffset(mapOffset)
 {
     if(fd <= 0)
-        throw std::runtime_error("Attempting to memory map a bad file descriptor.");
+        throw runtime_error("Attempting to memory map a bad file descriptor.");
 
     if(len == 0)
-        throw std::runtime_error("Attempting to memory map 0 bytes is invalid.");
+        throw runtime_error("Attempting to memory map 0 bytes is invalid.");
 
     if(!(flags & MM_TYPE_FILE) && !(flags & MM_TYPE_ANON))
-        throw std::runtime_error("A mapping must be either a file mapping, or an anonymous mapping (neither was specified).");
+        throw runtime_error("A mapping must be either a file mapping, or an anonymous mapping (neither was specified).");
 
     if(flags & MM_FIXED)
-        throw std::runtime_error("r_memory_map does not support fixed mappings.");
+        throw runtime_error("r_memory_map does not support fixed mappings.");
 
     _mem = mmap64(NULL, _length, _get_posix_prot_flags(prot), _get_posix_access_flags(flags), fd, offset);
 }
@@ -98,13 +100,13 @@ r_memory_map& r_memory_map::operator = (r_memory_map&& obj) noexcept
 {
     _close();
 
-    _mem = std::move(obj._mem);
+    _mem = move(obj._mem);
     obj._mem = NULL;
 
-    _length = std::move(obj._length);
+    _length = move(obj._length);
     obj._length = 0;
 
-    _mapOffset = std::move(obj._mapOffset);
+    _mapOffset = move(obj._mapOffset);
     obj._mapOffset = 0;
 
     return *this;
@@ -117,7 +119,7 @@ void r_memory_map::advise(void* addr, size_t length, int advice) const
     int err = madvise(addr, length, posixAdvice);
 
     if(err != 0)
-        throw std::runtime_error("Unable to apply memory mapping advice.");
+        throw runtime_error("Unable to apply memory mapping advice.");
 }
 
 void r_memory_map::_close() noexcept
