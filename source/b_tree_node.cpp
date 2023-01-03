@@ -42,11 +42,11 @@ b_tree_node::b_tree_node(const pager& p, uint64_t ofs) :
 
     // read the keys
     _keys = (int64_t*)read_ptr;
-    read_ptr += sizeof(int64_t) * ((degree() * 2) - 1);
+    read_ptr += sizeof(int64_t) * ((degree() ) - 1);
 
     // read the vals
     _vals = (uint64_t*)read_ptr;
-    read_ptr += sizeof(uint64_t) * ((degree() * 2) - 1);
+    read_ptr += sizeof(uint64_t) * ((degree() ) - 1);
 
     // read the child offsets
     _child_ofs = (uint64_t*)read_ptr;
@@ -76,18 +76,18 @@ b_tree_node::b_tree_node(const pager& p, uint64_t ofs, int degree, bool leaf) :
     write_ptr += sizeof(uint16_t);
     
     // write the keys
-    memset(write_ptr, 0, sizeof(int64_t) * ((degree * 2) - 1));
+    memset(write_ptr, 0, sizeof(int64_t) * ((degree) - 1));
     _keys = (int64_t*)write_ptr;
-    write_ptr += sizeof(int64_t) * ((degree * 2) - 1);
+    write_ptr += sizeof(int64_t) * ((degree) - 1);
 
     // write the vals
-    memset(write_ptr, 0, sizeof(uint64_t) * ((degree * 2) - 1));
+    memset(write_ptr, 0, sizeof(uint64_t) * ((degree) - 1));
     _vals = (uint64_t*)write_ptr;
-    write_ptr += sizeof(uint64_t) * ((degree * 2) - 1);
+    write_ptr += sizeof(uint64_t) * ((degree) - 1);
 
     // write the child offsets
     _child_ofs = (uint64_t*)write_ptr;
-    memset(write_ptr, 0, sizeof(uint64_t) * (degree * 2));
+    memset(write_ptr, 0, sizeof(uint64_t) * (degree));
 }
 
 b_tree_node::b_tree_node(const b_tree_node& obj) :
@@ -120,11 +120,11 @@ b_tree_node::b_tree_node(const b_tree_node& obj) :
 
     // read the keys
     _keys = (int64_t*)read_ptr;
-    read_ptr += sizeof(int64_t) * ((degree() * 2) - 1);
+    read_ptr += sizeof(int64_t) * ((degree() ) - 1);
 
     // read the vals
     _vals = (uint64_t*)read_ptr;
-    read_ptr += sizeof(uint64_t) * ((degree() * 2) - 1);
+    read_ptr += sizeof(uint64_t) * ((degree() ) - 1);
 
     // read the child offsets
     _child_ofs = (uint64_t*)read_ptr;
@@ -157,11 +157,11 @@ b_tree_node& b_tree_node::operator=(const b_tree_node& obj)
 
         // read the keys
         _keys = (int64_t*)read_ptr;
-        read_ptr += sizeof(int64_t) * ((degree() * 2) - 1);
+        read_ptr += sizeof(int64_t) * ((degree() ) - 1);
 
         // read the vals
         _vals = (uint64_t*)read_ptr;
-        read_ptr += sizeof(uint64_t) * ((degree() * 2) - 1);
+        read_ptr += sizeof(uint64_t) * ((degree() ) - 1);
 
         // read the child offsets
         _child_ofs = (uint64_t*)read_ptr;
@@ -202,7 +202,7 @@ void b_tree_node::_insert_non_full(int64_t k, uint64_t v)
         auto found_child = b_tree_node(_p, child_ofs(i+1));
 
         // See if the found child is full
-        if(found_child.num_keys() == 2*found_child.degree()-1)
+        if(found_child.num_keys() == found_child.degree()-1)
         {
             // If the child is full, then split it
             _split_child(i+1, child_ofs(i+1));
@@ -225,28 +225,29 @@ void b_tree_node::_split_child(int i, uint64_t ofs)
     // Get the node to be split
     auto y = b_tree_node(_p, ofs);
 
-    // Create a new node which is going to store (t-1) keys
-    // of y
+    // Since we are splitting we need to move half of our keys to the new node.
+
+    // Create a new node which is going to store (y.degree()/2)-1 keys of y
     auto z = b_tree_node(_p, _p.append_page(), y.degree(), y.leaf());
 
-    z.set_num_keys(y.degree()-1);
+    z.set_num_keys((y.degree()/2)-1);
 
-    // Copy the last (t-1) keys of y to z
-    for(int j = 0; j < y.degree()-1; ++j)
+    // Copy the last (y.degree()/2)-1 keys of y to z
+    for(int j = 0; j < (y.degree()/2)-1; ++j)
     {
-        z.set_key(j, y.key(j+y.degree()));
-        z.set_val(j, y.val(j+y.degree()));
+        z.set_key(j, y.key(j+(y.degree()/2)));
+        z.set_val(j, y.val(j+(y.degree()/2)));
     }
 
-    // Copy the last t children of y to z
+    // Copy the last y.degree()/2 children of y to z
     if(!y.leaf())
     {
-        for (int j = 0; j < y.degree(); ++j)
-            z.set_child_ofs(j, y.child_ofs(j+y.degree()));
+        for (int j = 0; j < (y.degree()/2); ++j)
+            z.set_child_ofs(j, y.child_ofs(j+(y.degree()/2)));
     }
 
     // Reduce the number of keys in y
-    y.set_num_keys(y.degree()-1);
+    y.set_num_keys((y.degree()/2)-1);
 
     // Since this node is going to have a new child,
     // create space of new child
@@ -265,8 +266,8 @@ void b_tree_node::_split_child(int i, uint64_t ofs)
     }
 
     // Copy the middle key of y to this node
-    set_key(i, y.key(y.degree()-1));
-    set_val(i, y.val(y.degree()-1));
+    set_key(i, y.key((y.degree()/2)-1));
+    set_val(i, y.val((y.degree()/2)-1));
 
     // Increment count of keys in this node
     set_num_keys(num_keys() + 1);
