@@ -67,15 +67,15 @@ class r_file final
 public:
     r_file();
     r_file(const r_file&) = delete;
-	r_file(r_file&& obj) noexcept;
-	~r_file() noexcept;
+    r_file(r_file&& obj) noexcept;
+    ~r_file() noexcept;
     r_file& operator = (r_file&) = delete;
-	r_file& operator = (r_file&& obj) noexcept;
+    r_file& operator = (r_file&& obj) noexcept;
 
-	inline operator FILE*() const { return _f; }
+    inline operator FILE*() const { return _f; }
 
-	static r_file open(const std::string& path, const std::string& mode);
-	void close();
+    static r_file open(const std::string& path, const std::string& mode);
+    void close();
 
 private:
     FILE* _f;

@@ -5,6 +5,7 @@
 #include "tdb/pager.h"
 #include "tdb/file_utils.h"
 #include <map>
+#include <optional>
 
 class b_tree_node
 {
@@ -18,7 +19,6 @@ public:
     b_tree_node(const b_tree_node& obj);
     b_tree_node& operator=(const b_tree_node& obj);
 
-    inline bool is_empty() const {return _is_empty;}
     inline uint16_t degree() const {return *_degree;}
     inline bool leaf() const {return (*_leaf) != 0;}
     inline void set_leaf(bool l) {*_leaf = l ? 1 : 0;}
@@ -35,10 +35,9 @@ private:
     void _insert_non_full(int64_t k, uint64_t v);
     void _split_child(int i, uint64_t ofs);    
     void _traverse();
-    std::pair<b_tree_node, uint16_t> _search(int64_t k); // returns NULL if k is not present.
+    std::optional<std::pair<b_tree_node, uint16_t>> _search(int64_t k); // returns NULL if k is not present.
 
     const pager& _p;
-    bool _is_empty;
     uint64_t _ofs;
     r_memory_map _mm;
     uint16_t* _degree;

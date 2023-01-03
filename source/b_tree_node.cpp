@@ -6,7 +6,6 @@ using namespace std;
 
 b_tree_node::b_tree_node(const pager& p) :
     _p(p),
-    _is_empty(true),
     _ofs(0),
     _mm(),
     _degree(nullptr),
@@ -20,12 +19,11 @@ b_tree_node::b_tree_node(const pager& p) :
 
 b_tree_node::b_tree_node(const pager& p, uint64_t ofs) : 
     _p(p),
-    _is_empty(false),
     _ofs(ofs),
     _mm(_p.map_page_from(_ofs))
 {
     if(ofs == 0)
-        throw std::runtime_error("Unable to create b_tree_node from offset 0");
+        throw runtime_error("Unable to create b_tree_node from offset 0");
 
     // map the block
     auto read_ptr = _mm.map().first;
@@ -56,7 +54,6 @@ b_tree_node::b_tree_node(const pager& p, uint64_t ofs) :
 
 b_tree_node::b_tree_node(const pager& p, uint64_t ofs, int degree, bool leaf) : 
     _p(p),
-    _is_empty(false),
     _ofs(ofs),
     _mm(_p.map_page_from(_ofs))
 {
@@ -95,7 +92,6 @@ b_tree_node::b_tree_node(const pager& p, uint64_t ofs, int degree, bool leaf) :
 
 b_tree_node::b_tree_node(const b_tree_node& obj) :
     _p(obj._p),
-    _is_empty(obj._is_empty),
     _ofs(obj._ofs),
     _mm(),
     _degree(nullptr),
@@ -105,8 +101,43 @@ b_tree_node::b_tree_node(const b_tree_node& obj) :
     _vals(nullptr),
     _child_ofs(nullptr)
 {
-    if(!_is_empty)
+    _mm = _p.map_page_from(_ofs);
+
+    // map the block
+    auto read_ptr = _mm.map().first;
+
+    // read the degree
+    _degree = (uint16_t*)read_ptr;
+    read_ptr += sizeof(uint16_t);
+
+    // read the leaf flag
+    _leaf = (uint16_t*)read_ptr;
+    read_ptr += sizeof(uint16_t);
+
+    // read the number of keys
+    _num_keys = (uint16_t*)read_ptr;
+    read_ptr += sizeof(uint16_t);
+
+    // read the keys
+    _keys = (int64_t*)read_ptr;
+    read_ptr += sizeof(int64_t) * ((degree() * 2) - 1);
+
+    // read the vals
+    _vals = (uint64_t*)read_ptr;
+    read_ptr += sizeof(uint64_t) * ((degree() * 2) - 1);
+
+    // read the child offsets
+    _child_ofs = (uint64_t*)read_ptr;
+}
+
+b_tree_node& b_tree_node::operator=(const b_tree_node& obj)
+{
+    if(this != &obj)
     {
+        // Note: we skip copying _p here because it is const and we should never be assiging
+        // a node from a different pager.
+
+        _ofs = obj._ofs;
         _mm = _p.map_page_from(_ofs);
 
         // map the block
@@ -134,49 +165,6 @@ b_tree_node::b_tree_node(const b_tree_node& obj) :
 
         // read the child offsets
         _child_ofs = (uint64_t*)read_ptr;
-    }
-}
-
-b_tree_node& b_tree_node::operator=(const b_tree_node& obj)
-{
-    if(this != &obj)
-    {
-        // Note: we skip copying _p here because it is const and we should never be assiging
-        // a node from a different pager.
-
-        _is_empty = obj._is_empty;
-
-        if(!_is_empty)
-        {
-            _ofs = obj._ofs;
-            _mm = _p.map_page_from(_ofs);
-
-            // map the block
-            auto read_ptr = _mm.map().first;
-
-            // read the degree
-            _degree = (uint16_t*)read_ptr;
-            read_ptr += sizeof(uint16_t);
-
-            // read the leaf flag
-            _leaf = (uint16_t*)read_ptr;
-            read_ptr += sizeof(uint16_t);
-
-            // read the number of keys
-            _num_keys = (uint16_t*)read_ptr;
-            read_ptr += sizeof(uint16_t);
-
-            // read the keys
-            _keys = (int64_t*)read_ptr;
-            read_ptr += sizeof(int64_t) * ((degree() * 2) - 1);
-
-            // read the vals
-            _vals = (uint64_t*)read_ptr;
-            read_ptr += sizeof(uint64_t) * ((degree() * 2) - 1);
-
-            // read the child offsets
-            _child_ofs = (uint64_t*)read_ptr;
-        }
     }
 
     return *this;
@@ -298,7 +286,7 @@ void b_tree_node::_traverse()
             auto child = b_tree_node(_p, child_ofs(i));
             child._traverse();
         }
-        std::cout << " " << _keys[i];
+        cout << " " << _keys[i];
     }
 
     // Print the subtree rooted with last child
@@ -309,8 +297,10 @@ void b_tree_node::_traverse()
     }
 }
 
-std::pair<b_tree_node, uint16_t> b_tree_node::_search(int64_t k)   // returns NULL if k is not present.
+optional<pair<b_tree_node, uint16_t>> b_tree_node::_search(int64_t k)   // returns NULL if k is not present.
 {
+    optional<pair<b_tree_node, uint16_t>> result;
+
     // Find the first key greater than or equal to k
     int i = 0;
     while(i < num_keys() && k > key(i))
@@ -318,11 +308,14 @@ std::pair<b_tree_node, uint16_t> b_tree_node::_search(int64_t k)   // returns NU
 
     // If the found key is equal to k, return this node
     if(key(i) == k)
-        return make_pair(*this, i);
+    {
+        result = make_pair(*this, i);
+        return result;
+    }
 
     // If key is not found here and this is a leaf node
     if(leaf())
-        return make_pair(b_tree_node(_p), 0); // no args means is_empty()
+        return result;
 
     // Go to the appropriate child
     return b_tree_node(_p, child_ofs(i))._search(k);

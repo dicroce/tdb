@@ -61,8 +61,8 @@ std::optional<uint64_t> b_tree::search(int64_t k)
     b_tree_node root_node(_p, root_ofs);
     auto search_results = root_node._search(k);
     std::optional<uint64_t> result;
-    if(!search_results.first.is_empty())
-        result = search_results.first.val(search_results.second);
+    if(search_results)
+        result = search_results->first.val(search_results->second);
     return result;
 }
 
