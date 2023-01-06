@@ -25,6 +25,8 @@ public:
 
     uint64_t append_page() const;
 
+    void copy_page(uint64_t srcOfs, uint64_t dstOfs) const;
+
     uint64_t root_ofs() const;
     void set_root_ofs(uint64_t ofs) const;
 

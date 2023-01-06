@@ -74,6 +74,13 @@ uint64_t pager::append_page() const
     return lastNBlocks * pager::block_size();
 }
 
+void pager::copy_page(uint64_t srcOfs, uint64_t dstOfs) const
+{
+    auto src_map = map_page_from(srcOfs);
+    auto dst_map = map_page_from(dstOfs);
+    memcpy(dst_map.map().first, src_map.map().first, pager::block_size());
+}
+
 uint64_t pager::root_ofs() const
 {
     return _read_root_ofs();

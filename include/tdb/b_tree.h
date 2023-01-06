@@ -69,6 +69,8 @@ public:
             auto old_root = b_tree_node<KEY_T>(_p, root_ofs);
             if(old_root.num_keys() == _degree-1)
             {
+                // Handle the full root node case...
+                
                 auto new_root_ofs = _p.append_page();
                 b_tree_node<KEY_T> new_root_node(_p, new_root_ofs, _degree, false);
                 new_root_node.set_child_ofs(0, root_ofs);
