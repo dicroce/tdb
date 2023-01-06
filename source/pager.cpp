@@ -69,8 +69,7 @@ uint64_t pager::append_page() const
         if(err != 0)
             throw std::runtime_error("ftruncate failed");
     } while(!_update_nblocks(lastNBlocks, lastNBlocks+1));
-    
-    //return pager::block_size() + (lastNBlocks * pager::block_size());
+
     return lastNBlocks * pager::block_size();
 }
 
