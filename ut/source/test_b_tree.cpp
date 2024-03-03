@@ -35,7 +35,7 @@ void test_b_tree::setup()
 void test_b_tree::teardown()
 {
     unlink("test.db");
-    unlink("dotfile.txt");
+    //unlink("dotfile.txt");
 }
 
 void test_b_tree::test_basic()

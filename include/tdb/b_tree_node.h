@@ -19,7 +19,8 @@ public:
     b_tree_node(const b_tree_node& obj);
     b_tree_node& operator=(const b_tree_node& obj);
 
-    inline uint16_t degree() const {return *_degree;}
+    inline uint16_t half_degree() const {return *_half_degree;}
+    inline uint16_t degree() const {return 2*half_degree();}
     inline bool leaf() const {return (*_leaf) != 0;}
     inline void set_leaf(bool l) {*_leaf = l ? 1 : 0;}
     inline uint16_t num_keys() const {return (uint16_t)*_num_keys;}
@@ -31,6 +32,8 @@ public:
     inline uint64_t child_ofs(uint16_t i) const {return _child_ofs[i];}
     inline void set_child_ofs(uint16_t i, uint64_t ofs) {_child_ofs[i] = ofs;}
 
+    inline bool full() const {return num_keys() == 2*half_degree() - 1;}
+
 private:
     void _insert_non_full(int64_t k, uint64_t v);
     void _split_child(int i, uint64_t ofs);    
@@ -40,7 +43,7 @@ private:
     const pager& _p;
     uint64_t _ofs;
     r_memory_map _mm;
-    uint16_t* _degree;
+    uint16_t* _half_degree;
     uint16_t* _leaf;
     uint16_t* _num_keys;
     int64_t* _keys;

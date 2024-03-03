@@ -30,7 +30,7 @@ void b_tree::insert(int64_t k, uint64_t v)
     else
     {
         auto old_root = b_tree_node(_p, root_ofs);
-        if(old_root.num_keys() == 2*_degree-1)
+        if(old_root.full())
         {
             auto new_root_ofs = _p.append_page();
             b_tree_node new_root_node(_p, new_root_ofs, _degree, false);
