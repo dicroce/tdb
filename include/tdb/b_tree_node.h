@@ -6,6 +6,7 @@
 #include "tdb/file_utils.h"
 #include <map>
 #include <optional>
+#include <tuple>
 
 class b_tree_node
 {
@@ -21,6 +22,7 @@ public:
 
     inline uint16_t half_degree() const {return *_half_degree;}
     inline uint16_t degree() const {return 2*half_degree();}
+    inline uint64_t ofs() const {return _ofs;}
     inline bool leaf() const {return (*_leaf) != 0;}
     inline void set_leaf(bool l) {*_leaf = l ? 1 : 0;}
     inline uint16_t num_keys() const {return (uint16_t)*_num_keys;}
@@ -38,7 +40,7 @@ private:
     void _insert_non_full(int64_t k, uint64_t v);
     void _split_child(int i, uint64_t ofs);    
     void _traverse();
-    std::optional<std::pair<b_tree_node, uint16_t>> _search(int64_t k); // returns NULL if k is not present.
+    std::optional<std::tuple<b_tree_node, uint16_t, uint64_t>> _search(int64_t k, uint64_t parent_ofs); // returns NULL if k is not present.
 
     const pager& _p;
     uint64_t _ofs;

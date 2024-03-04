@@ -46,6 +46,7 @@ public:
     static void create_db_file(const std::string& file_name);
 
     void insert(int64_t k, uint64_t v);
+    void remove(int64_t k);
     std::optional<uint64_t> search(int64_t k);
     void render_to_dot_file(const std::string& file_name);
     void traverse();

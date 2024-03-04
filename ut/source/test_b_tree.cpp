@@ -53,3 +53,21 @@ void test_b_tree::test_dot_file()
 
     t.render_to_dot_file("dotfile.txt");
 }
+
+void test_b_tree::test_basic_remove()
+{
+    b_tree::create_db_file("test_basic_remove.db");
+    b_tree t("test_basic_remove.db");
+
+    t.insert(10, 10);
+    t.insert(20, 20);
+    t.insert(30, 30);
+    t.insert(40, 40);
+
+    t.render_to_dot_file("dotfile_basic_remove_pre.txt");
+
+    t.remove(30);
+
+    t.render_to_dot_file("dotfile_basic_remove.txt");
+
+}
