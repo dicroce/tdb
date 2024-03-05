@@ -67,8 +67,6 @@ void b_tree::remove(int64_t k)
     auto idx = std::get<1>(*search_result);
     auto parent_ofs = std::get<2>(*search_result);
 
-    printf("found_node.val(idx)=%lu\n", found_node.val(idx));
-
     auto new_ofs = _p.append_page();
     b_tree_node new_node(_p, new_ofs, found_node.degree(), found_node.leaf());
 
@@ -79,18 +77,24 @@ void b_tree::remove(int64_t k)
         if (i != idx) {
             new_node.set_key(j, found_node.key(i));
             new_node.set_val(j, found_node.val(i));
-            new_node.set_child_ofs(j, found_node.child_ofs(i));
             ++j;
             ++n_copied;
         }
     }
     new_node.set_num_keys(n_copied);
 
+    for (int i = 0, j = 0; i < found_node.num_keys()+1; ++i) {
+        if (i != idx+1) {
+            new_node.set_child_ofs(j, found_node.child_ofs(i));
+            ++j;
+        }
+    }
+
     if(parent_ofs != 0xFFFFFFFFFFFFFFFF)
     {
         b_tree_node parent(_p, parent_ofs);
+        // note: btree nodes have one more child than keys because they have both less and greater than keys for each child.
         for (int i = 0; i < parent.num_keys()+1; ++i) {
-            printf("i=%d, parent.child_ofs(i)=%lu, found_node.ofs()=%lu\n", i, parent.child_ofs(i), found_node.ofs());
             if (parent.child_ofs(i) == found_node.ofs()) {
                 parent.set_child_ofs(i, new_node.ofs());
                 break;
@@ -101,51 +105,6 @@ void b_tree::remove(int64_t k)
     {
         _p.set_root_ofs(new_node.ofs());
     }
-
-#if 0
-    // Start searching from the root node
-    b_tree_node root(_p, _p.root_ofs());
-
-    // Find the node containing the key
-    auto search_result = root._search(k);
-    if(!search_result)
-        return;
-    auto found_node = search_result->first;
-    auto idx = search_result->second;
-
-    // Allocate a new node at the end of the file
-    auto new_ofs = _p.append_page();
-    b_tree_node new_node(_p, new_ofs, found_node.degree(), found_node.leaf(), found_node.parent_ofs());
-
-    // Copy the keys, values, and child offsets from the old node to the new node,
-    // skipping the key to be deleted
-    int n_copied = 0;
-    for (int i = 0, j = 0; i < found_node.num_keys(); ++i) {
-        if (i != idx) {
-            new_node.set_key(j, found_node.key(i));
-            new_node.set_val(j, found_node.val(i));
-            new_node.set_child_ofs(j, found_node.child_ofs(i));
-            ++j;
-            ++n_copied;
-        }
-    }
-    new_node.set_num_keys(n_copied);
-    //new_node.set_child_ofs(found_node.num_keys() - 1, found_node.child_ofs(found_node.num_keys()));
-
-    // Replace the old node with the new node in the parent
-    if (found_node.has_parent_ofs()) {
-        b_tree_node parent(_p, found_node.parent_ofs());
-        for (int i = 0; i < parent.num_keys(); ++i) {
-            if (parent.child_ofs(i) == found_node.ofs()) {
-                parent.set_child_ofs(i, new_node.ofs());
-                break;
-            }
-        }
-    } else {
-        // The node is the root, so the new node becomes the new root
-        _p.set_root_ofs(new_node.ofs());
-    }
-#endif
 }
 
 optional<uint64_t> b_tree::search(int64_t k)
@@ -194,10 +153,9 @@ void b_tree::_build_dot_tree(uint64_t root_ofs, string& tree, int nodeNum)
     tree += "ofs=" + to_string(root_ofs) + " ";
     tree += "\"]\n";
 
-    auto n_keys = root.num_keys();
     // Print the child nodes
     int childNum = 1;
-    for(int i = 0; i < n_keys+1; ++i)
+    for(int i = 0; i < root.num_keys()+1; ++i)
     {
         if(root.child_ofs(i) != 0)
         {

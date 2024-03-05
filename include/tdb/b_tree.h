@@ -12,19 +12,10 @@
 //         and updating the child_ofs of the parent node to point to the new node with a CAS.
 //         BUT if the cas fails, then the whole insert needs to be retried.
 //     - At this point, insert() should be thread safe requiring no locking.
-// - delete
-//   - Find the node containing the value you want to delete.
-//     - pager allocate a new node at the end of the file
-//     - copy the keys, values and child_ofs from the node you want to delete to the new node skipping the index of the matching key (skip the key, value and child_ofs at the index)
-//     - set the child_ofs of the parent node to the new node using a CAS
-//       - if the node has no parent, then the new node is the new root
-//     - This simplified version of delete will not merge nodes
-//       - This will result in a slightly unbalanced tree until the next vacuum
-//       - The advantage is that it is much simpler to implement and will be faster
-//       
-//   - modify traversal to skip nodes with deleted flag
-//   - modify search to skip nodes with deleted flag
-
+// - remove()
+//   - modify remove to use cas to publish the changed node.
+//   - modify b_tree_node to have "deleted" flag
+//   - add vacuum method to pager + b_tree
 
 #include "tdb/b_tree_node.h"
 #include <string>

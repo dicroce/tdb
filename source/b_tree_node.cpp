@@ -202,7 +202,7 @@ void b_tree_node::_insert_non_full(int64_t k, uint64_t v)
         auto found_child = b_tree_node(_p, child_ofs(i+1));
 
         // See if the found child is full
-        if(found_child.num_keys() == 2*found_child.half_degree()-1)
+        if(found_child.full())
         {
             // If the child is full, then split it
             _split_child(i+1, child_ofs(i+1));
@@ -227,7 +227,7 @@ void b_tree_node::_split_child(int i, uint64_t ofs)
 
     // Create a new node which is going to store (t-1) keys
     // of y
-    auto z = b_tree_node(_p, _p.append_page(), y.half_degree()*2, y.leaf());
+    auto z = b_tree_node(_p, _p.append_page(), y.degree(), y.leaf());
 
     z.set_num_keys(y.half_degree()-1);
 
@@ -250,6 +250,7 @@ void b_tree_node::_split_child(int i, uint64_t ofs)
 
     // Since this node is going to have a new child,
     // create space of new child
+    // Note: remember we have one more child than keys
     for(int j = num_keys(); j >= i+1; --j)
         set_child_ofs(j+1, child_ofs(j));
 
@@ -276,8 +277,8 @@ void b_tree_node::_traverse()
 {
     // There are n keys and n+1 children, travers through n
     // keys and first n children
-    int i;
-    for(i = 0; i < num_keys(); ++i)
+    int i = 0;
+    for(; i < num_keys(); ++i)
     {
         // If this is not leaf, then before printing key[i],
         // traverse the subtree rooted with child C[i].
