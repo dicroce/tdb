@@ -87,7 +87,7 @@ b_tree_node::b_tree_node(const pager& p, uint64_t ofs, int degree, bool leaf) :
 
     // write the child offsets
     _child_ofs = (uint64_t*)write_ptr;
-    memset(write_ptr, 0, sizeof(uint64_t) * (half_degree() * 2));
+    memset(write_ptr, 0, sizeof(uint64_t) * (half_degree() * 2) + 1);
 }
 
 b_tree_node::b_tree_node(const b_tree_node& obj) :
@@ -128,6 +128,7 @@ b_tree_node::b_tree_node(const b_tree_node& obj) :
 
     // read the child offsets
     _child_ofs = (uint64_t*)read_ptr;
+    memcpy(_child_ofs, obj._child_ofs, sizeof(uint64_t) * (half_degree() * 2) + 1);
 }
 
 b_tree_node& b_tree_node::operator=(const b_tree_node& obj)
@@ -165,6 +166,7 @@ b_tree_node& b_tree_node::operator=(const b_tree_node& obj)
 
         // read the child offsets
         _child_ofs = (uint64_t*)read_ptr;
+        memcpy(_child_ofs, obj._child_ofs, sizeof(uint64_t) * (half_degree() * 2) + 1);
     }
 
     return *this;

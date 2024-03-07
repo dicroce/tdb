@@ -3,6 +3,8 @@
 #define __b_tree_h
 
 // TODO
+// - Write more tests.
+// - Shrink the pager page size to be closer / equal to node size.
 // - More atomic inserts
 //   - Add a new atomic insert path
 //     - this will require an atomic _insert_non_full() and _split_child() functions.
