@@ -10,47 +10,43 @@
 
 class b_tree_node
 {
-    friend class b_tree;
-
+friend class b_tree;
 public:
-    b_tree_node(const pager& p);
-    b_tree_node(const pager& p, uint64_t ofs);
-    b_tree_node(const pager& p, uint64_t ofs, int degree, bool leaf);
+    b_tree_node(const pager& p, uint16_t min_degree, bool leaf);
+    b_tree_node(const pager& p, int64_t ofs);
 
-    b_tree_node(const b_tree_node& obj);
-    b_tree_node& operator=(const b_tree_node& obj);
+    void insert_non_full(int64_t k, int64_t v);
 
-    inline uint16_t half_degree() const {return *_half_degree;}
-    inline uint16_t degree() const {return 2*half_degree();}
-    inline uint64_t ofs() const {return _ofs;}
-    inline bool leaf() const {return (*_leaf) != 0;}
-    inline void set_leaf(bool l) {*_leaf = l ? 1 : 0;}
-    inline uint16_t num_keys() const {return (uint16_t)*_num_keys;}
-    inline void set_num_keys(uint16_t n) {*_num_keys = n;}
-    inline int64_t key(uint16_t i) const {return _keys[i];}
-    inline void set_key(uint16_t i, int64_t k) {_keys[i] = k;}
-    inline uint64_t val(uint16_t i) const {return _vals[i];}
-    inline void set_val(uint16_t i, uint64_t v) {_vals[i] = v;}
-    inline uint64_t child_ofs(uint16_t i) const {return _child_ofs[i];}
-    inline void set_child_ofs(uint16_t i, uint64_t ofs) {_child_ofs[i] = ofs;}
+    void split_child(int i, int64_t ofs);
 
-    inline bool full() const {return num_keys() == 2*half_degree() - 1;}
+    void traverse();
+
+    std::optional<int64_t> search(int64_t k);
+
+    uint16_t min_degree() const {return *_min_degree;}
+    bool leaf() const {return (*_leaf) != 0;}
+    uint16_t num_keys() const {return *_num_keys;}
+    void set_num_keys(uint16_t n) {*_num_keys = n;}
+    int64_t key(uint16_t i) const {return _keys[i];}
+    void set_key(uint16_t i, int64_t k) {_keys[i] = k;}
+    int64_t val(uint16_t i) const {return _vals[i];}
+    void set_val(uint16_t i, int64_t v) {_vals[i] = v;}
+    int64_t child_ofs(uint16_t i) const {return _child_ofs[i];}
+    void set_child_ofs(uint16_t i, int64_t ofs) {_child_ofs[i] = ofs;}
+    bool full() const {return num_keys() == 2*min_degree() - 1;}
+
+    int64_t ofs() const {return _ofs;}
 
 private:
-    void _insert_non_full(int64_t k, uint64_t v);
-    void _split_child(int i, uint64_t ofs);    
-    void _traverse();
-    std::optional<std::tuple<b_tree_node, uint16_t, uint64_t>> _search(int64_t k, uint64_t parent_ofs); // returns NULL if k is not present.
-
     const pager& _p;
-    uint64_t _ofs;
+    int64_t _ofs;
     r_memory_map _mm;
-    uint16_t* _half_degree;
+    uint16_t* _min_degree;
     uint16_t* _leaf;
     uint16_t* _num_keys;
     int64_t* _keys;
-    uint64_t* _vals;
-    uint64_t* _child_ofs;
+    int64_t* _vals;
+    int64_t* _child_ofs;
 };
 
 #endif

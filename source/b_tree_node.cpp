@@ -4,20 +4,40 @@
 
 using namespace std;
 
-b_tree_node::b_tree_node(const pager& p) :
+b_tree_node::b_tree_node(const pager& p, uint16_t min_degree, bool leaf) :
     _p(p),
-    _ofs(0),
-    _mm(),
-    _half_degree(nullptr),
+    _ofs(_p.append_page()),
+    _mm(_p.map_page_from(_ofs)),
+    _min_degree(nullptr),
     _leaf(nullptr),
     _num_keys(nullptr),
     _keys(nullptr),
     _vals(nullptr),
     _child_ofs(nullptr)
 {
+    auto read_ptr = _mm.map().first;
+
+    _min_degree = (uint16_t*)read_ptr;
+    *(_min_degree) = min_degree;
+    read_ptr += sizeof(uint16_t);
+
+    _leaf = (uint16_t*)read_ptr;
+    *(_leaf) = leaf ? 1 : 0;
+    read_ptr += sizeof(uint16_t);
+
+    _num_keys = (uint16_t*)read_ptr;
+    read_ptr += sizeof(uint16_t);
+
+    _keys = (int64_t*)read_ptr;
+    read_ptr += sizeof(int64_t) * ((*_min_degree * 2) - 1);
+
+    _vals = (int64_t*)read_ptr;
+    read_ptr += sizeof(int64_t) * ((*_min_degree * 2) - 1);
+
+    _child_ofs = (int64_t*)read_ptr;
 }
 
-b_tree_node::b_tree_node(const pager& p, uint64_t ofs) : 
+b_tree_node::b_tree_node(const pager& p, int64_t ofs) :
     _p(p),
     _ofs(ofs),
     _mm(_p.map_page_from(_ofs))
@@ -25,298 +45,169 @@ b_tree_node::b_tree_node(const pager& p, uint64_t ofs) :
     if(ofs == 0)
         throw runtime_error("Unable to create b_tree_node from offset 0");
 
-    // map the block
     auto read_ptr = _mm.map().first;
 
-    // read the degree
-    _half_degree = (uint16_t*)read_ptr;
+    _min_degree = (uint16_t*)read_ptr;
     read_ptr += sizeof(uint16_t);
 
-    // read the leaf flag
     _leaf = (uint16_t*)read_ptr;
     read_ptr += sizeof(uint16_t);
 
-    // read the number of keys
     _num_keys = (uint16_t*)read_ptr;
     read_ptr += sizeof(uint16_t);
 
-    // read the keys
     _keys = (int64_t*)read_ptr;
-    read_ptr += sizeof(int64_t) * ((half_degree() * 2) - 1);
+    read_ptr += sizeof(int64_t) * ((*_min_degree * 2) - 1);
 
-    // read the vals
-    _vals = (uint64_t*)read_ptr;
-    read_ptr += sizeof(uint64_t) * ((half_degree() * 2) - 1);
+    _vals = (int64_t*)read_ptr;
+    read_ptr += sizeof(int64_t) * ((*_min_degree * 2) - 1);
 
-    // read the child offsets
-    _child_ofs = (uint64_t*)read_ptr;
+    _child_ofs = (int64_t*)read_ptr;
 }
 
-b_tree_node::b_tree_node(const pager& p, uint64_t ofs, int degree, bool leaf) : 
-    _p(p),
-    _ofs(ofs),
-    _mm(_p.map_page_from(_ofs))
-{
-    // map the block
-    auto write_ptr = _mm.map().first;
-
-    // write the half_degree
-    *(uint16_t*)write_ptr = degree / 2;
-    _half_degree = (uint16_t*)write_ptr;
-    write_ptr += sizeof(uint16_t);
-
-    // write the leaf flag
-    *(uint16_t*)write_ptr = leaf ? 1 : 0;
-    _leaf = (uint16_t*)write_ptr;
-    write_ptr += sizeof(uint16_t);
-
-    // write the number of keys
-    *(uint16_t*)write_ptr = 0;
-    _num_keys = (uint16_t*)write_ptr;
-    write_ptr += sizeof(uint16_t);
-    
-    // write the keys
-    memset(write_ptr, 0, sizeof(int64_t) * ((half_degree()*2) - 1));
-    _keys = (int64_t*)write_ptr;
-    write_ptr += sizeof(int64_t) * ((half_degree()*2) - 1);
-
-    // write the vals
-    memset(write_ptr, 0, sizeof(uint64_t) * ((half_degree()*2) - 1));
-    _vals = (uint64_t*)write_ptr;
-    write_ptr += sizeof(uint64_t) * ((half_degree()*2) - 1);
-
-    // write the child offsets
-    _child_ofs = (uint64_t*)write_ptr;
-    memset(write_ptr, 0, sizeof(uint64_t) * (half_degree() * 2) + 1);
-}
-
-b_tree_node::b_tree_node(const b_tree_node& obj) :
-    _p(obj._p),
-    _ofs(obj._ofs),
-    _mm(),
-    _half_degree(nullptr),
-    _leaf(nullptr),
-    _num_keys(nullptr),
-    _keys(nullptr),
-    _vals(nullptr),
-    _child_ofs(nullptr)
-{
-    _mm = _p.map_page_from(_ofs);
-
-    // map the block
-    auto read_ptr = _mm.map().first;
-
-    // read the degree
-    _half_degree = (uint16_t*)read_ptr;
-    read_ptr += sizeof(uint16_t);
-
-    // read the leaf flag
-    _leaf = (uint16_t*)read_ptr;
-    read_ptr += sizeof(uint16_t);
-
-    // read the number of keys
-    _num_keys = (uint16_t*)read_ptr;
-    read_ptr += sizeof(uint16_t);
-
-    // read the keys
-    _keys = (int64_t*)read_ptr;
-    read_ptr += sizeof(int64_t) * ((half_degree() * 2) - 1);
-
-    // read the vals
-    _vals = (uint64_t*)read_ptr;
-    read_ptr += sizeof(uint64_t) * ((half_degree() * 2) - 1);
-
-    // read the child offsets
-    _child_ofs = (uint64_t*)read_ptr;
-    memcpy(_child_ofs, obj._child_ofs, sizeof(uint64_t) * (half_degree() * 2) + 1);
-}
-
-b_tree_node& b_tree_node::operator=(const b_tree_node& obj)
-{
-    if(this != &obj)
-    {
-        // Note: we skip copying _p here because it is const and we should never be assiging
-        // a node from a different pager.
-
-        _ofs = obj._ofs;
-        _mm = _p.map_page_from(_ofs);
-
-        // map the block
-        auto read_ptr = _mm.map().first;
-
-        // read the degree
-        _half_degree = (uint16_t*)read_ptr;
-        read_ptr += sizeof(uint16_t);
-
-        // read the leaf flag
-        _leaf = (uint16_t*)read_ptr;
-        read_ptr += sizeof(uint16_t);
-
-        // read the number of keys
-        _num_keys = (uint16_t*)read_ptr;
-        read_ptr += sizeof(uint16_t);
-
-        // read the keys
-        _keys = (int64_t*)read_ptr;
-        read_ptr += sizeof(int64_t) * ((half_degree() * 2) - 1);
-
-        // read the vals
-        _vals = (uint64_t*)read_ptr;
-        read_ptr += sizeof(uint64_t) * ((half_degree() * 2) - 1);
-
-        // read the child offsets
-        _child_ofs = (uint64_t*)read_ptr;
-        memcpy(_child_ofs, obj._child_ofs, sizeof(uint64_t) * (half_degree() * 2) + 1);
-    }
-
-    return *this;
-}
-
-void b_tree_node::_insert_non_full(int64_t k, uint64_t v)
+void b_tree_node::insert_non_full(int64_t k, int64_t v)
 {
     // Initialize index as index of rightmost element
-    int i = num_keys() - 1;
-
-    // If this is a leaf
-    if(leaf())
+    int i = num_keys()-1;
+ 
+    // If this is a leaf node
+    if (leaf())
     {
         // The following loop does two things
         // a) Finds the location of new key to be inserted
         // b) Moves all greater keys to one place ahead
-        while(i >= 0 && _keys[i] > k)
+        while (i >= 0 && _keys[i] > k)
         {
-            set_key(i+1, key(i));
-            set_val(i+1, val(i));
-            --i;
+            _keys[i+1] = _keys[i];
+            _vals[i+1] = _vals[i];
+            i--;
         }
-
+ 
         // Insert the new key at found location
-        set_key(i+1, k);
+        _keys[i+1] = k;
+        _vals[i+1] = v;
         set_num_keys(num_keys() + 1);
-        set_val(i+1, v);
     }
     else // If this node is not leaf
     {
         // Find the child which is going to have the new key
-        while(i >= 0 && key(i) > k)
-            --i;
-
-        auto found_child = b_tree_node(_p, child_ofs(i+1));
-
+        while (i >= 0 && _keys[i] > k)
+            i--;
+ 
+        b_tree_node child(_p, child_ofs(i+1));
         // See if the found child is full
-        if(found_child.full())
+        if (child.num_keys() == 2*min_degree() - 1)
         {
             // If the child is full, then split it
-            _split_child(i+1, child_ofs(i+1));
-
-            // After split, the middle key of C[i] goes up and
-            // C[i] is splitted into two.  See which of the two
+            split_child(i+1, child_ofs(i+1));
+ 
+            // After split, the middle key of _child_ofs[i] goes up and
+            // _child_ofs[i] is splitted into two.  See which of the two
             // is going to have the new key
-            if(key(i+1) < k)
-                ++i;
+            if (_keys[i+1] < k)
+                i++;
         }
 
-        auto found_child2 = b_tree_node(_p, child_ofs(i+1));
-
-        found_child2._insert_non_full(k, v);
+        b_tree_node new_child(_p, _child_ofs[i+1]);
+        new_child.insert_non_full(k, v);
     }
 }
 
-void b_tree_node::_split_child(int i, uint64_t ofs)
+void b_tree_node::split_child(int i, int64_t ofs)
 {
-    // Get the node to be split
-    auto y = b_tree_node(_p, ofs);
+    b_tree_node y(_p, ofs);
 
     // Create a new node which is going to store (t-1) keys
     // of y
-    auto z = b_tree_node(_p, _p.append_page(), y.degree(), y.leaf());
-
-    z.set_num_keys(y.half_degree()-1);
-
-    // Copy the last (t-1) keys of y to z
-    for(int j = 0; j < y.half_degree()-1; ++j)
+    b_tree_node z(_p, y.min_degree(), y.leaf());
+    z.set_num_keys(min_degree() - 1);
+ 
+    // Copy the last (min_degree-1) keys of y to z
+    for (int j = 0; j < min_degree()-1; j++)
     {
-        z.set_key(j, y.key(j+y.half_degree()));
-        z.set_val(j, y.val(j+y.half_degree()));
+        z._keys[j] = y._keys[j+min_degree()];
+        z._vals[j] = y._vals[j+min_degree()];
     }
-
-    // Copy the last t children of y to z
-    if(!y.leaf())
+ 
+    // Copy the last min_degree children of y to z
+    if (y.leaf() == false)
     {
-        for (int j = 0; j < y.half_degree(); ++j)
-            z.set_child_ofs(j, y.child_ofs(j+y.half_degree()));
+        for (int j = 0; j < min_degree(); j++)
+            z._child_ofs[j] = y._child_ofs[j+min_degree()];
     }
-
+ 
     // Reduce the number of keys in y
-    y.set_num_keys(y.half_degree()-1);
-
+    y.set_num_keys(min_degree() - 1);
+ 
     // Since this node is going to have a new child,
     // create space of new child
-    // Note: remember we have one more child than keys
-    for(int j = num_keys(); j >= i+1; --j)
-        set_child_ofs(j+1, child_ofs(j));
-
+    for (int j = num_keys(); j >= i+1; j--)
+        _child_ofs[j+1] = _child_ofs[j];
+ 
     // Link the new child to this node
-    set_child_ofs(i+1, z._ofs);
-
-    // A key of y will move to this node. Find location of
+    _child_ofs[i+1] = z.ofs();
+ 
+    // A key of y will move to this node. Find the location of
     // new key and move all greater keys one space ahead
-    for(int j = num_keys()-1; j >= i; --j)
+    for (int j = num_keys()-1; j >= i; j--)
     {
-        set_key(j+1, key(j));
-        set_val(j+1, val(j));
+        _keys[j+1] = _keys[j];
+        _vals[j+1] = _vals[j];
     }
-
+ 
     // Copy the middle key of y to this node
-    set_key(i, y.key(y.half_degree()-1));
-    set_val(i, y.val(y.half_degree()-1));
-
+    _keys[i] = y._keys[min_degree()-1];
+    _vals[i] = y._vals[min_degree()-1];
+ 
     // Increment count of keys in this node
     set_num_keys(num_keys() + 1);
 }
 
-void b_tree_node::_traverse()
+void b_tree_node::traverse()
 {
-    // There are n keys and n+1 children, travers through n
-    // keys and first n children
-    int i = 0;
-    for(; i < num_keys(); ++i)
+    // There are n keys and n+1 children, traverse through n keys
+    // and first n children
+    int i;
+    for (i = 0; i < num_keys(); i++)
     {
         // If this is not leaf, then before printing key[i],
         // traverse the subtree rooted with child C[i].
-        if(!leaf())
+        if (leaf() == false)
         {
-            auto child = b_tree_node(_p, child_ofs(i));
-            child._traverse();
+            b_tree_node child(_p, child_ofs(i));
+            child.traverse();
         }
         cout << " " << _keys[i];
     }
-
+ 
     // Print the subtree rooted with last child
-    if(!leaf())
+    if (leaf() == false)
     {
-        auto child = b_tree_node(_p, child_ofs(i));
-        child._traverse();
+        b_tree_node child(_p, child_ofs(i));
+        child.traverse();
     }
 }
 
-optional<tuple<b_tree_node, uint16_t, uint64_t>> b_tree_node::_search(int64_t k, uint64_t parent_ofs)
+optional<int64_t> b_tree_node::search(int64_t k)
 {
     // Find the first key greater than or equal to k
     int i = 0;
-    while(i < num_keys() && k > key(i))
-        ++i;
-
+    while (i < num_keys() && k > _keys[i])
+        i++;
+ 
+    optional<int64_t> result;
     // If the found key is equal to k, return this node
-    if(key(i) == k)
+    if (_keys[i] == k)
     {
-        return make_tuple(*this, i, parent_ofs);
+        result = _vals[i];
+        return result;
     }
  
     // If key is not found here and this is a leaf node
-    if(leaf())
-        return optional<tuple<b_tree_node, uint16_t, uint64_t>>();
-
+    if (leaf() == true)
+        return result;
+ 
     // Go to the appropriate child
-    return b_tree_node(_p, child_ofs(i))._search(k, ofs());
+    b_tree_node child(_p, child_ofs(i));
+    return child.search(k);
 }

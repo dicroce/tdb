@@ -28,28 +28,51 @@
 class b_tree
 {
 public:
-    b_tree() = delete;
-    b_tree(const std::string& file_name);
-    b_tree(const b_tree&) = delete;
-    b_tree(b_tree&&) = delete;
+    // Constructor (Initializes tree as empty)
+    b_tree(const std::string& file_name, uint16_t min_degree) :
+        _p(file_name),
+        _root(_p.root_ofs()),
+        _min_degree(min_degree)
+    {        
+    }
+ 
+    // function to traverse the tree
+    void traverse()
+    {
+        if (_root != 0)
+        {
+            b_tree_node root(_p, _root);
+            root.traverse();
+        }
+    }
+ 
+    // function to search a key in this tree
+    std::optional<int64_t> search(int64_t k)
+    {
+        std::optional<int64_t> result;
+        if (_root != 0)
+        {
+            b_tree_node root(_p, _root);
+            result = root.search(k);
+        }
+        return result;
+    }
+ 
+    // The main function that inserts a new key in this B-Tree
+    void insert(int64_t k, int64_t v);
 
-    b_tree& operator=(const b_tree&) = delete;
-    b_tree& operator=(b_tree&&) = delete;
+    // Function to write the B-tree to a Graphviz DOT file
+    void write_dot_file(const std::string& file_name);
 
-    static void create_db_file(const std::string& file_name);
-
-    void insert(int64_t k, uint64_t v);
-    void remove(int64_t k);
-    std::optional<uint64_t> search(int64_t k);
-    void render_to_dot_file(const std::string& file_name);
-    void traverse();
+    static void create_db_file(const std::string& file_name)
+    {
+        pager::create(file_name);
+    }
 
 private:
-    void _build_dot_tree(uint64_t root_ofs, std::string& tree, int nodeNum=1);
-
-    std::string _file_name;
     pager _p;
-    int _degree;
+    int64_t _root; // Pointer to root node
+    uint16_t _min_degree;  // Minimum degree
 };
 
 #endif
