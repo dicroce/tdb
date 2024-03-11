@@ -6,18 +6,19 @@
 // - Write more tests.
 // - Shrink the pager page size to be closer / equal to node size.
 // - More atomic inserts
-//   - Add a new atomic insert path
-//     - this will require an atomic _insert_non_full() and _split_child() functions.
-//     - The atomic versions of these functions will limit its modifications to the existing
-//       tree to CAS updates of child_ofs.
-//       - This will work by duplicating existing nodes at the end of the file (with append_page())
-//         and updating the child_ofs of the parent node to point to the new node with a CAS.
-//         BUT if the cas fails, then the whole insert needs to be retried.
-//     - At this point, insert() should be thread safe requiring no locking.
-// - remove()
-//   - modify remove to use cas to publish the changed node.
-//   - modify b_tree_node to have "deleted" flag
-//   - add vacuum method to pager + b_tree
+//   - Two pass insert
+//     - First pass, traverse tree and build duplicate arm of tree from and including root.
+//       - Copy the keys and values of each node we visit to the passed in new node.
+//       - For each child of the node we are on in the tree, allocate a new node and update the child_ofs of the passed in new node.
+//       - Recurse into each child.
+//     - Insert into duplicated arm.
+//     - CAS update of root node to duplicated arm root node.
+// - More atomic removes
+//   - Since inserts are append only I think we can delete a key with the following steps:
+//      - Read of the ofs of the root node.
+//      - Traverse the tree to find the key to delete.
+//      - Update valid flag of the key to delete.
+//      - CAS update of root node. If we fail, we need to traverse the tree again and try to delete the key again. *NOTE* This relies on __sync_bool_compare_and_swap() returning true when the cmpval and exchval are the same.
 
 #include "tdb/b_tree_node.h"
 #include <string>
@@ -29,58 +30,27 @@ class b_tree
 {
 public:
     // Constructor (Initializes tree as empty)
-    b_tree(const std::string& file_name, uint16_t min_degree) :
-        _p(file_name),
-        _root(_p.root_ofs()),
-        _min_degree(min_degree)
-    {        
-    }
+    b_tree(const std::string& file_name, uint16_t min_degree);
  
-    // function to traverse the tree
-    void traverse()
-    {
-        if (_root != 0)
-        {
-            b_tree_node root(_p, _root);
-            root.traverse();
-        }
-    }
- 
-    // function to search a key in this tree
-    std::optional<int64_t> search(int64_t k)
-    {
-        std::optional<int64_t> result;
-        if (_root != 0)
-        {
-            b_tree_node root(_p, _root);
-            result = root.search(k);
-        }
-        return result;
-    }
- 
-    // The main function that inserts a new key in this B-Tree
+     // The main function that inserts a new key in this B-Tree
     void insert(int64_t k, int64_t v);
 
-    void remove(int64_t k)
-    {
-        if (_root != 0)
-        {
-            b_tree_node root(_p, _root);
-            root.remove(k);
-        }
-    }
+    // function to search a key in this tree
+    std::optional<int64_t> search(int64_t k);
+ 
+    void remove(int64_t k);
 
     // Function to write the B-tree to a Graphviz DOT file
     void write_dot_file(const std::string& file_name);
 
-    static void create_db_file(const std::string& file_name)
-    {
-        pager::create(file_name);
-    }
+    static void create_db_file(const std::string& file_name);
+
+    static void vacuum(const std::string& file_name);
 
 private:
+    void _insert(int64_t k, int64_t v, int64_t root_ofs);
+
     pager _p;
-    int64_t _root; // Pointer to root node
     uint16_t _min_degree;  // Minimum degree
 };
 

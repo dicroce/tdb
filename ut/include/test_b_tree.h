@@ -5,6 +5,7 @@ class test_b_tree : public test_fixture
 {
 public:
     RTF_FIXTURE(test_b_tree);
+      TEST(test_b_tree::test_CAS);
       TEST(test_b_tree::test_basic);
       TEST(test_b_tree::test_duplicate_key_insert);
       TEST(test_b_tree::test_dot_file);
@@ -17,6 +18,7 @@ public:
     virtual void setup();
     virtual void teardown();
 
+    void test_CAS();
     void test_basic();
     void test_duplicate_key_insert();
     void test_dot_file();

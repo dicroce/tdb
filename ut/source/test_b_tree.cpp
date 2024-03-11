@@ -60,6 +60,23 @@ void test_b_tree::teardown()
     unlink("dotfile.txt");
 }
 
+void test_b_tree::test_CAS()
+{
+    uint64_t counter = 41;
+
+    // Make sure CAS update on new value (where compval==*ptr) works
+    auto result = __sync_bool_compare_and_swap(&counter, 41, 42);
+    RTF_ASSERT(result);
+
+    // Make sure CAS update on same value (where compval==*ptr) works
+    result = __sync_bool_compare_and_swap(&counter, 42, 42);
+    RTF_ASSERT(result);
+
+    // Make sure CAS update on different value (where compval!=*ptr) works
+    result = __sync_bool_compare_and_swap(&counter, 43, 44);
+    RTF_ASSERT(!result);
+}
+
 void test_b_tree::test_basic()
 {
     b_tree t("test.db", 4);

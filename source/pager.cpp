@@ -102,8 +102,7 @@ uint32_t pager::_read_nblocks() const
 
 bool pager::_update_nblocks(uint32_t lastVal, uint32_t newVal) const
 {
-    uint32_t out = __sync_val_compare_and_swap((uint32_t*)map_page_from(0).map().first, lastVal, newVal);
-    return out == lastVal;
+    return __sync_bool_compare_and_swap((uint32_t*)map_page_from(0).map().first, lastVal, newVal);
 }
 
 uint64_t pager::_read_root_ofs() const
@@ -115,6 +114,5 @@ uint64_t pager::_read_root_ofs() const
 
 bool pager::_update_root_ofs(uint64_t lastVal, uint64_t newVal) const
 {
-    uint64_t out = __sync_val_compare_and_swap((uint64_t*)(map_page_from(0).map().first + 4), lastVal, newVal);
-    return out == lastVal;
+    return __sync_bool_compare_and_swap((uint64_t*)(map_page_from(0).map().first + 4), lastVal, newVal);
 }

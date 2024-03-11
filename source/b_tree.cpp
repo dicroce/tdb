@@ -5,40 +5,49 @@
 
 using namespace std;
 
+b_tree::b_tree(const string& file_name, uint16_t min_degree) :
+    _p(file_name),
+    _min_degree(min_degree)
+{        
+}
+
 void b_tree::insert(int64_t k, int64_t v)
 {
-    // If tree is empty
-    if (_root == 0)
+    auto root_ofs = _p.root_ofs();
+
+    if (root_ofs == 0)
     {
         // Allocate memory for root
         b_tree_node root(_p, _min_degree, true);
-        _root = root.ofs();
-        _p.set_root_ofs(_root);
+        root._set_num_keys(1);  // Update number of keys in root
+        root._set_key(0, k);  // Insert key
+        root._set_valid_key(0, true);  // Mark key as valid
+        root._set_val(0, v);  // Insert value
 
-        root.set_num_keys(1);  // Update number of keys in root
-        root.set_key(0, k);  // Insert key
-        root.set_valid_key(0, true);  // Mark key as valid
-        root.set_val(0, v);  // Insert value
+        _p.set_root_ofs(root._ofs());
     }
-    else // If tree is not empty
-    {
-        // If root is full, then tree grows in height
-        b_tree_node root(_p, _root);
-        if(root.full())
-        {            
-            b_tree_node s(_p, _min_degree, false);
-            s.set_child_ofs(0, _root);
-            s.split_child(0, _root);
+    else _insert(k, v, root_ofs);
+}
 
-            int i = 0;
-            if(s.key(i) < k)
-                i++;
-            b_tree_node new_child(_p, s.child_ofs(i));
-            new_child.insert_non_full(k, v);
-            _root = s.ofs();
-            _p.set_root_ofs(_root);
-        }
-        else root.insert_non_full(k, v);
+optional<int64_t> b_tree::search(int64_t k)
+{
+    auto root_ofs = _p.root_ofs();
+    std::optional<int64_t> result;
+    if (root_ofs != 0)
+    {
+        b_tree_node root(_p, root_ofs);
+        result = root._search(k);
+    }
+    return result;
+}
+
+void b_tree::remove(int64_t k)
+{
+    auto root_ofs = _p.root_ofs();
+    if (root_ofs != 0)
+    {
+        b_tree_node root(_p, root_ofs);
+        root._remove(k);
     }
 }
 
@@ -56,7 +65,8 @@ void b_tree::write_dot_file(const string& file_name)
 
     queue<pair<int64_t, int>> q;
     int node_id = 0;
-    q.push({_root, node_id++});
+    auto root_ofs = _p.root_ofs();
+    q.push({root_ofs, node_id++});
 
     while (!q.empty())
     {
@@ -67,12 +77,12 @@ void b_tree::write_dot_file(const string& file_name)
         int current_id = node_id++;
 
         file << "  node" << current_id << " [label=\"";
-        for (int i = 0; i < node.num_keys(); i++)
+        for (int i = 0; i < node._num_keys(); i++)
         {
             if (i > 0)
                 file << "|";
-            if(node.valid_key(i))
-                file << "<f" << i << "> " << node.key(i) << " (" << node.val(i) << ")";
+            if(node._valid_key(i))
+                file << "<f" << i << "> " << node._key(i) << " (" << node._val(i) << ")";
         }
         file << "\"];\n";
 
@@ -81,15 +91,51 @@ void b_tree::write_dot_file(const string& file_name)
             file << "  node" << parent_id << " -> node" << current_id << ";\n";
         }
 
-        if (!node.leaf())
+        if (!node._leaf())
         {
-            for (int i = 0; i <= node.num_keys(); i++)
+            for (int i = 0; i <= node._num_keys(); i++)
             {
-                q.push({node.child_ofs(i), current_id});
+                q.push({node._child_ofs(i), current_id});
             }
         }
     }
 
     file << "}\n";
     file.close();
+}
+
+void b_tree::create_db_file(const std::string& file_name)
+{
+    pager::create(file_name);
+}
+
+void b_tree::vacuum(const std::string& file_name)
+{
+    // create temp file name
+    // call create_db_file with temp file name
+    // pager open file_name
+    // read root node and traverse tree writing each element to temp file
+    // rename temp file to file_name
+}
+
+void b_tree::_insert(int64_t k, int64_t v, int64_t root_ofs)
+{
+    // If root is full, then tree grows in height
+    b_tree_node root(_p, root_ofs);
+    if(root._full())
+    {
+        b_tree_node new_root(_p, _min_degree, false);
+        new_root._set_child_ofs(0, root_ofs);
+        new_root._split_child(0, root_ofs);
+
+        int i = 0;
+        if(new_root._key(i) < k)
+            i++;
+
+        b_tree_node new_child(_p, new_root._child_ofs(i));
+        new_child._insert_non_full(k, v);
+
+        _p.set_root_ofs(new_root._ofs());
+    }
+    else root._insert_non_full(k, v);
 }
