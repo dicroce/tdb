@@ -23,12 +23,16 @@ public:
 
     std::optional<int64_t> search(int64_t k);
 
+    void remove(int64_t k);
+
     uint16_t min_degree() const {return *_min_degree;}
     bool leaf() const {return (*_leaf) != 0;}
     uint16_t num_keys() const {return *_num_keys;}
     void set_num_keys(uint16_t n) {*_num_keys = n;}
     int64_t key(uint16_t i) const {return _keys[i];}
     void set_key(uint16_t i, int64_t k) {_keys[i] = k;}
+    bool valid_key(uint16_t i) const {return (_valid_keys[i] == 0)?false:true;}
+    void set_valid_key(uint16_t i, bool v) {_valid_keys[i] = (v)?1:0;}
     int64_t val(uint16_t i) const {return _vals[i];}
     void set_val(uint16_t i, int64_t v) {_vals[i] = v;}
     int64_t child_ofs(uint16_t i) const {return _child_ofs[i];}
@@ -45,6 +49,7 @@ private:
     uint16_t* _leaf;
     uint16_t* _num_keys;
     int64_t* _keys;
+    uint8_t* _valid_keys;
     int64_t* _vals;
     int64_t* _child_ofs;
 };

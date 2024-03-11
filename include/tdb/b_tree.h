@@ -61,6 +61,15 @@ public:
     // The main function that inserts a new key in this B-Tree
     void insert(int64_t k, int64_t v);
 
+    void remove(int64_t k)
+    {
+        if (_root != 0)
+        {
+            b_tree_node root(_p, _root);
+            root.remove(k);
+        }
+    }
+
     // Function to write the B-tree to a Graphviz DOT file
     void write_dot_file(const std::string& file_name);
 

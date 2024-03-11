@@ -17,6 +17,7 @@ void b_tree::insert(int64_t k, int64_t v)
 
         root.set_num_keys(1);  // Update number of keys in root
         root.set_key(0, k);  // Insert key
+        root.set_valid_key(0, true);  // Mark key as valid
         root.set_val(0, v);  // Insert value
     }
     else // If tree is not empty
@@ -70,7 +71,8 @@ void b_tree::write_dot_file(const string& file_name)
         {
             if (i > 0)
                 file << "|";
-            file << "<f" << i << "> " << node.key(i) << " (" << node.val(i) << ")";
+            if(node.valid_key(i))
+                file << "<f" << i << "> " << node.key(i) << " (" << node.val(i) << ")";
         }
         file << "\"];\n";
 

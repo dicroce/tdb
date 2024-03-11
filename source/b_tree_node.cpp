@@ -12,6 +12,7 @@ b_tree_node::b_tree_node(const pager& p, uint16_t min_degree, bool leaf) :
     _leaf(nullptr),
     _num_keys(nullptr),
     _keys(nullptr),
+    _valid_keys(nullptr),
     _vals(nullptr),
     _child_ofs(nullptr)
 {
@@ -26,10 +27,14 @@ b_tree_node::b_tree_node(const pager& p, uint16_t min_degree, bool leaf) :
     read_ptr += sizeof(uint16_t);
 
     _num_keys = (uint16_t*)read_ptr;
+    *(_num_keys) = 0;
     read_ptr += sizeof(uint16_t);
 
     _keys = (int64_t*)read_ptr;
     read_ptr += sizeof(int64_t) * ((*_min_degree * 2) - 1);
+
+    _valid_keys = (uint8_t*)read_ptr;
+    read_ptr += sizeof(uint8_t) * ((*_min_degree * 2) - 1);
 
     _vals = (int64_t*)read_ptr;
     read_ptr += sizeof(int64_t) * ((*_min_degree * 2) - 1);
@@ -59,6 +64,9 @@ b_tree_node::b_tree_node(const pager& p, int64_t ofs) :
     _keys = (int64_t*)read_ptr;
     read_ptr += sizeof(int64_t) * ((*_min_degree * 2) - 1);
 
+    _valid_keys = (uint8_t*)read_ptr;
+    read_ptr += sizeof(uint8_t) * ((*_min_degree * 2) - 1);
+
     _vals = (int64_t*)read_ptr;
     read_ptr += sizeof(int64_t) * ((*_min_degree * 2) - 1);
 
@@ -79,12 +87,14 @@ void b_tree_node::insert_non_full(int64_t k, int64_t v)
         while (i >= 0 && _keys[i] > k)
         {
             _keys[i+1] = _keys[i];
+            _valid_keys[i+1] = _valid_keys[i];
             _vals[i+1] = _vals[i];
             i--;
         }
  
         // Insert the new key at found location
         _keys[i+1] = k;
+        _valid_keys[i+1] = 1;
         _vals[i+1] = v;
         set_num_keys(num_keys() + 1);
     }
@@ -126,6 +136,7 @@ void b_tree_node::split_child(int i, int64_t ofs)
     for (int j = 0; j < min_degree()-1; j++)
     {
         z._keys[j] = y._keys[j+min_degree()];
+        z._valid_keys[j] = y._valid_keys[j+min_degree()];
         z._vals[j] = y._vals[j+min_degree()];
     }
  
@@ -152,11 +163,13 @@ void b_tree_node::split_child(int i, int64_t ofs)
     for (int j = num_keys()-1; j >= i; j--)
     {
         _keys[j+1] = _keys[j];
+        _valid_keys[j+1] = _valid_keys[j];
         _vals[j+1] = _vals[j];
     }
  
     // Copy the middle key of y to this node
     _keys[i] = y._keys[min_degree()-1];
+    _valid_keys[i] = y._valid_keys[min_degree()-1];
     _vals[i] = y._vals[min_degree()-1];
  
     // Increment count of keys in this node
@@ -177,7 +190,8 @@ void b_tree_node::traverse()
             b_tree_node child(_p, child_ofs(i));
             child.traverse();
         }
-        cout << " " << _keys[i];
+        if(_valid_keys[i] == 1)
+            cout << " " << _keys[i];
     }
  
     // Print the subtree rooted with last child
@@ -199,7 +213,8 @@ optional<int64_t> b_tree_node::search(int64_t k)
     // If the found key is equal to k, return this node
     if (_keys[i] == k)
     {
-        result = _vals[i];
+        if(_valid_keys[i] == 1)
+            result = _vals[i];
         return result;
     }
  
@@ -210,4 +225,23 @@ optional<int64_t> b_tree_node::search(int64_t k)
     // Go to the appropriate child
     b_tree_node child(_p, child_ofs(i));
     return child.search(k);
+}
+
+void b_tree_node::remove(int64_t k)
+{
+    int i = 0;
+    while(i < num_keys() && _keys[i] < k)
+        i++;
+
+    if(i < num_keys() && _keys[i] == k)
+    {
+        _valid_keys[i] = 0;
+        return;
+    }
+
+   if(leaf())
+        return;
+
+    b_tree_node child(_p, child_ofs(i));
+    child.remove(k);
 }
