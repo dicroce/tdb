@@ -6,6 +6,7 @@ class test_b_tree : public test_fixture
 public:
     RTF_FIXTURE(test_b_tree);
       TEST(test_b_tree::test_basic);
+      TEST(test_b_tree::test_duplicate_key_insert);
       TEST(test_b_tree::test_dot_file);
       TEST(test_b_tree::test_basic_remove);
       TEST(test_b_tree::test_lots_of_inserts_and_removes);
@@ -17,6 +18,7 @@ public:
     virtual void teardown();
 
     void test_basic();
+    void test_duplicate_key_insert();
     void test_dot_file();
     void test_basic_remove();
     void test_lots_of_inserts_and_removes();

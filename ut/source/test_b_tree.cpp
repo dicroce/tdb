@@ -20,6 +20,24 @@ REGISTER_TEST_FIXTURE(test_b_tree);
 std::vector<int64_t> test_keys(100);
 std::vector<uint64_t> test_vals(100);
 
+template<typename T>
+bool has_all_keys(T& t, const vector<int64_t>& keys)
+{
+    for(auto k : keys)
+    {
+        uint64_t v;
+        if(!t.search(k))
+            return false;
+    }
+    return true;
+}
+
+template<typename T>
+void insert_all(T& t, const vector<int64_t>& keys)
+{
+    for(size_t i = 0; i < keys.size(); ++i)
+        t.insert(keys[i], keys[i]+100);
+}
 
 void test_b_tree::setup()
 {
@@ -33,8 +51,7 @@ void test_b_tree::setup()
     std::shuffle(begin(test_keys), end(test_keys), rng);
     std::shuffle(begin(test_vals), end(test_vals), rng);    
 
-    for(auto k : test_keys)
-        t.insert(k, k + 100);
+    insert_all(t, test_keys);
 }
 
 void test_b_tree::teardown()
@@ -52,30 +69,18 @@ void test_b_tree::test_basic()
     RTF_ASSERT(t.search(99) == 199);
 }
 
+void test_b_tree::test_duplicate_key_insert()
+{
+    b_tree t("test.db", 4);
+
+    RTF_ASSERT_THROWS(t.insert(99, 99), std::runtime_error);
+}
+
 void test_b_tree::test_dot_file()
 {
     b_tree t("test.db", 4);
 
     t.write_dot_file("dotfile.txt");
-}
-
-template<typename T>
-bool has_all_keys(T& t, const vector<int64_t>& keys)
-{
-    for(auto k : keys)
-    {
-        uint64_t v;
-        if(!t.search(k))
-            return false;
-    }
-    return true;
-}
-
-template<typename T>
-void insert_all(T& t, const vector<int64_t>& keys)
-{
-    for(size_t i = 0; i < keys.size(); ++i)
-        t.insert(keys[i], keys[i]);
 }
 
 void test_b_tree::test_basic_remove()
@@ -95,25 +100,18 @@ void test_b_tree::test_basic_remove()
 
 void test_b_tree::test_lots_of_inserts_and_removes()
 {
-    pager::create("test.db");
     b_tree t("test.db", 4);
 
     auto keys = test_keys;
 
-    insert_all(t, keys);
-
-    RTF_ASSERT(has_all_keys(t, keys));
-
     while(!keys.empty())
     {
+        RTF_ASSERT(has_all_keys(t, keys));
+
         auto k = keys.back();
         keys.pop_back();
         RTF_ASSERT(t.search(k));
         t.remove(k);
         RTF_ASSERT(!t.search(k));
-//        printf("removed %ld\n", k);
-//        fflush(stdout);
-        RTF_ASSERT(has_all_keys(t, keys));
     }
-
 }

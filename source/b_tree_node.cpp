@@ -91,6 +91,9 @@ void b_tree_node::insert_non_full(int64_t k, int64_t v)
             _vals[i+1] = _vals[i];
             i--;
         }
+
+        if(i >= 0 && (_keys[i] == k && _valid_keys[i] == 1))
+            throw runtime_error("Duplicate key");
  
         // Insert the new key at found location
         _keys[i+1] = k;
