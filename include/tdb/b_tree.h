@@ -29,29 +29,21 @@
 class b_tree
 {
 public:
-    // Constructor (Initializes tree as empty)
     b_tree(const std::string& file_name, uint16_t min_degree);
  
-     // The main function that inserts a new key in this B-Tree
     void insert(int64_t k, int64_t v);
-
-    // function to search a key in this tree
     std::optional<int64_t> search(int64_t k);
- 
     void remove(int64_t k);
-
-    // Function to write the B-tree to a Graphviz DOT file
     void write_dot_file(const std::string& file_name);
 
     static void create_db_file(const std::string& file_name);
-
     static void vacuum(const std::string& file_name);
 
 private:
     void _insert(int64_t k, int64_t v, int64_t root_ofs);
 
     pager _p;
-    uint16_t _min_degree;  // Minimum degree
+    uint16_t _min_degree;
 };
 
 #endif

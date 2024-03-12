@@ -120,10 +120,14 @@ void b_tree::vacuum(const std::string& file_name)
 
 void b_tree::_insert(int64_t k, int64_t v, int64_t root_ofs)
 {
-    // If root is full, then tree grows in height
     b_tree_node root(_p, root_ofs);
     if(root._full())
     {
+        // If the root is full then:
+        //     Make a new node.
+        //     Set our old root ofs as its child 0 and call _split_child on it. Our new node will then have two children.
+        //     Scan our new node and if the key we are inserting is less than the key at index i, then call _insert_non_full() on the node at child i.
+
         b_tree_node new_root(_p, _min_degree, false);
         new_root._set_child_ofs(0, root_ofs);
         new_root._split_child(0, root_ofs);

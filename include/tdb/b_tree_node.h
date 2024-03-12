@@ -32,11 +32,8 @@ private:
     bool _full() const {return _num_keys() == 2*_min_degree() - 1;}
 
     void _insert_non_full(int64_t k, int64_t v);
-
     void _split_child(int i, int64_t ofs);
-
     std::optional<int64_t> _search(int64_t k);
-
     void _remove(int64_t k);
 
     const pager& _p;
