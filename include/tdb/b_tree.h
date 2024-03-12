@@ -11,6 +11,7 @@
 //       - Copy the keys and values of each node we visit to the passed in new node.
 //       - For each child of the node we are on in the tree, allocate a new node and update the child_ofs of the passed in new node.
 //       - Recurse into each child.
+//       - NOTE: This sounds easier than it is. In practice I suspect it will be hard to predict which child to go down if a node needs to be split.
 //     - Insert into duplicated arm.
 //     - CAS update of root node to duplicated arm root node.
 // - More atomic removes
