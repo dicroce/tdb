@@ -5,15 +5,6 @@
 // TODO
 // - Write more tests.
 // - Shrink the pager page size to be closer / equal to node size.
-// - More atomic inserts
-//   - Two pass insert
-//     - First pass, traverse tree and build duplicate arm of tree from and including root.
-//       - Copy the keys and values of each node we visit to the passed in new node.
-//       - For each child of the node we are on in the tree, allocate a new node and update the child_ofs of the passed in new node.
-//       - Recurse into each child.
-//       - NOTE: This sounds easier than it is. In practice I suspect it will be hard to predict which child to go down if a node needs to be split.
-//     - Insert into duplicated arm.
-//     - CAS update of root node to duplicated arm root node.
 // - More atomic removes
 //   - Since inserts are append only I think we can delete a key with the following steps:
 //      - Read of the ofs of the root node.
@@ -32,7 +23,7 @@ class b_tree
 public:
     b_tree(const std::string& file_name, uint16_t min_degree);
  
-    void insert(int64_t k, int64_t v);
+    void insert(int64_t key, int64_t value);
     std::optional<int64_t> search(int64_t k);
     void remove(int64_t k);
     void write_dot_file(const std::string& file_name);
@@ -41,7 +32,8 @@ public:
     static void vacuum(const std::string& file_name);
 
 private:
-    void _insert(int64_t k, int64_t v, int64_t root_ofs);
+    b_tree_node _copy_arm(int64_t key, int64_t node_ofs);
+    void _insert_atomic_recursive(int64_t key, int64_t value, int64_t node_ofs);
 
     pager _p;
     uint16_t _min_degree;

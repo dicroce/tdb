@@ -4,6 +4,42 @@
 
 using namespace std;
 
+// Object copy constructor, non deep copy
+b_tree_node::b_tree_node(const b_tree_node& obj) :
+    _p(obj._p),
+    _ofs_field(obj._ofs_field),
+    _mm(_p.map_page_from(_ofs_field)),
+    _min_degree_field(nullptr),
+    _leaf_field(nullptr),
+    _num_keys_field(nullptr),
+    _keys_field(nullptr),
+    _valid_keys_field(nullptr),
+    _vals_field(nullptr),
+    _child_ofs_field(nullptr)
+{
+    auto read_ptr = _mm.map().first;
+
+    _min_degree_field = (uint16_t*)read_ptr;
+    read_ptr += sizeof(uint16_t);
+
+    _leaf_field = (uint16_t*)read_ptr;
+    read_ptr += sizeof(uint16_t);
+
+    _num_keys_field = (uint16_t*)read_ptr;
+    read_ptr += sizeof(uint16_t);
+
+    _keys_field = (int64_t*)read_ptr;
+    read_ptr += sizeof(int64_t) * ((*_min_degree_field * 2) - 1);
+
+    _valid_keys_field = (uint8_t*)read_ptr;
+    read_ptr += sizeof(uint8_t) * ((*_min_degree_field * 2) - 1);
+
+    _vals_field = (int64_t*)read_ptr;
+    read_ptr += sizeof(int64_t) * ((*_min_degree_field * 2) - 1);
+
+    _child_ofs_field = (int64_t*)read_ptr;
+}
+
 b_tree_node::b_tree_node(const pager& p, uint16_t min_degree, bool leaf) :
     _p(p),
     _ofs_field(_p.append_page()),
@@ -73,6 +109,37 @@ b_tree_node::b_tree_node(const pager& p, int64_t ofs) :
     _child_ofs_field = (int64_t*)read_ptr;
 }
 
+b_tree_node& b_tree_node::operator=(const b_tree_node& obj)
+{
+    if (this != &obj)
+    {
+        _ofs_field = obj._ofs_field;
+        _mm = _p.map_page_from(_ofs_field);
+
+        auto read_ptr = _mm.map().first;
+
+        _min_degree_field = (uint16_t*)read_ptr;
+        read_ptr += sizeof(uint16_t);
+
+        _leaf_field = (uint16_t*)read_ptr;
+        read_ptr += sizeof(uint16_t);
+
+        _num_keys_field = (uint16_t*)read_ptr;
+        read_ptr += sizeof(uint16_t);
+
+        _keys_field = (int64_t*)read_ptr;
+        read_ptr += sizeof(int64_t) * ((*_min_degree_field * 2) - 1);
+
+        _valid_keys_field = (uint8_t*)read_ptr;
+        read_ptr += sizeof(uint8_t) * ((*_min_degree_field * 2) - 1);
+
+        _vals_field = (int64_t*)read_ptr;
+        read_ptr += sizeof(int64_t) * ((*_min_degree_field * 2) - 1);
+
+        _child_ofs_field = (int64_t*)read_ptr;
+    }
+    return *this;
+}
 
 void b_tree_node::_insert_non_full(int64_t k, int64_t v)
 {

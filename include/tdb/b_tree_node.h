@@ -12,8 +12,11 @@ class b_tree_node
 {
 friend class b_tree;
 public:
+    b_tree_node(const b_tree_node& obj); // Object copy constructor, non deep copy
     b_tree_node(const pager& p, uint16_t min_degree, bool leaf);
     b_tree_node(const pager& p, int64_t ofs);
+
+    b_tree_node& operator=(const b_tree_node&); // Object copy assignment, non deep copy
 
 private:
     int64_t _ofs() const {return _ofs_field;}

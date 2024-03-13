@@ -11,6 +11,7 @@
 #include <vector>
 #include <string>
 #include <queue>
+#include <thread>
 #include <cstdint>
 
 using namespace std;
@@ -131,4 +132,128 @@ void test_b_tree::test_lots_of_inserts_and_removes()
         t.remove(k);
         RTF_ASSERT(!t.search(k));
     }
+}
+
+void test_b_tree::test_insert_ascending_order()
+{
+    b_tree::create_db_file("test_insert_ascending_order.db");
+    b_tree t("test_insert_ascending_order.db", 4);
+
+    std::vector<int64_t> keys(100);
+    std::iota(begin(keys), end(keys), 1);
+
+    insert_all(t, keys);
+
+    RTF_ASSERT(has_all_keys(t, keys));
+
+    unlink("test_insert_ascending_order.db");
+}
+
+void test_b_tree::test_insert_descending_order()
+{
+    b_tree::create_db_file("test_insert_descending_order.db");
+    b_tree t("test_insert_descending_order.db", 4);
+
+    std::vector<int64_t> keys(100);
+    std::iota(rbegin(keys), rend(keys), 1);
+
+    insert_all(t, keys);
+
+    RTF_ASSERT(has_all_keys(t, keys));
+
+    unlink("test_insert_descending_order.db");
+}
+
+void test_b_tree::test_remove_random_order()
+{
+    b_tree::create_db_file("test_remove_random_order.db");
+    b_tree t("test_remove_random_order.db", 4);
+
+    std::vector<int64_t> keys(100);
+    std::iota(begin(keys), end(keys), 1);
+    std::shuffle(begin(keys), end(keys), std::default_random_engine{});
+
+    insert_all(t, keys);
+
+    std::shuffle(begin(keys), end(keys), std::default_random_engine{});
+
+    for (auto k : keys) {
+        RTF_ASSERT(t.search(k));
+        t.remove(k);
+        RTF_ASSERT(!t.search(k));
+    }
+
+    unlink("test_remove_random_order.db");
+}
+
+void test_b_tree::test_search_non_existent_keys()
+{
+    b_tree t("test.db", 4);
+
+    std::vector<int64_t> non_existent_keys = {-10, -5, 200, 500};
+
+    for (auto k : non_existent_keys) {
+        RTF_ASSERT(!t.search(k));
+    }
+}
+
+void test_b_tree::test_large_number_of_keys()
+{
+    b_tree::create_db_file("test_large_number_of_keys.db");
+    b_tree t("test_large_number_of_keys.db", 4);
+
+    std::vector<int64_t> keys(10000);
+    std::iota(begin(keys), end(keys), 1);
+    std::shuffle(begin(keys), end(keys), std::default_random_engine{});
+
+    insert_all(t, keys);
+
+    RTF_ASSERT(has_all_keys(t, keys));
+
+    std::shuffle(begin(keys), end(keys), std::default_random_engine{});
+
+    for (auto k : keys) {
+        t.remove(k);
+    }
+
+    for (auto k : keys) {
+        RTF_ASSERT(!t.search(k));
+    }
+
+    unlink("test_large_number_of_keys.db");
+}
+
+void test_b_tree::test_concurrent_inserts()
+{
+    b_tree::create_db_file("test_concurrent_inserts.db");
+    b_tree t("test_concurrent_inserts.db", 4);
+
+    const int num_threads = 4;
+    const int num_inserts_per_thread = 1000;
+
+    std::vector<std::thread> threads;
+    std::vector<std::vector<int64_t>> thread_keys(num_threads);
+
+    // Launch multiple threads to perform concurrent inserts
+    for (int i = 0; i < num_threads; ++i) {
+        threads.emplace_back([&, i]() {
+            for (int j = 0; j < num_inserts_per_thread; ++j) {
+                int64_t key = i * num_inserts_per_thread + j;
+                thread_keys[i].push_back(key);
+                t.insert(key, key + 100);
+            }
+        });
+    }
+
+    // Wait for all threads to finish
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    // Verify that all inserted keys are present in the B-tree
+    for (const auto& keys : thread_keys) {
+        RTF_ASSERT(has_all_keys(t, keys));
+    }
+
+    unlink("test_concurrent_inserts.db");
 }

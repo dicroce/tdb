@@ -79,13 +79,10 @@ uint64_t pager::root_ofs() const
     return _read_root_ofs();
 }
 
-void pager::set_root_ofs(uint64_t ofs) const
+bool pager::set_root_ofs(uint64_t lastVal, uint64_t newVal) const
 {
-    uint64_t lastRootOfs;
+    return _update_root_ofs(lastVal, newVal);
 
-    do {
-        lastRootOfs = _read_root_ofs();
-    } while(!_update_root_ofs(lastRootOfs, ofs));
 }
 
 void pager::sync() const

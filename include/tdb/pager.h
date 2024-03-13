@@ -26,7 +26,7 @@ public:
     uint64_t append_page() const;
 
     uint64_t root_ofs() const;
-    void set_root_ofs(uint64_t ofs) const;
+    bool set_root_ofs(uint64_t lastVal, uint64_t newVal) const;
 
     void sync() const;
 
