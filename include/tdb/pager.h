@@ -41,6 +41,7 @@ private:
 
     std::string _fileName;
     r_file _f;
+    r_memory_map _mm;
 };
 
 #endif

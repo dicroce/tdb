@@ -13,9 +13,10 @@ b_tree::b_tree(const string& file_name, uint16_t min_degree) :
 
 void b_tree::insert(int64_t key, int64_t value) {
     bool inserted = false;
+    int attempt = 0;
     while (!inserted) {
-        int64_t root_ofs = _p.root_ofs();
-        if (root_ofs == 0) {
+        int64_t old_root_ofs = _p.root_ofs();
+        if (old_root_ofs == 0) {
             // If the tree is empty, create a new root node and insert the key-value pair
             b_tree_node root(_p, _min_degree, true);
             root._set_num_keys(1);
@@ -24,24 +25,37 @@ void b_tree::insert(int64_t key, int64_t value) {
             root._set_val(0, value);
             if(_p.set_root_ofs(0, root._ofs()))
                 inserted = true;
+            else { printf("Failed to set root ofs 1 %d\n",attempt); ++attempt; }
         } else {
             // Copy the arm of the tree from the root to the leaf node
-            b_tree_node copied_root = _copy_arm(key, root_ofs);
+            printf("Copied arm ofs: ");
+            b_tree_node copied_root = _copy_arm(key, old_root_ofs);
+            printf("\n");
 
+            // Traverse down the copied arm and insert the key-value pair
             if (copied_root._num_keys() == 2 * _min_degree - 1) {
+                printf("Root is full\n");
                 // If the root node is full, split it preemptively
                 b_tree_node new_root(_p, _min_degree, false);
                 new_root._set_child_ofs(0, copied_root._ofs());
                 new_root._split_child(0, copied_root._ofs());
-                copied_root = new_root;
+                printf("insert ofs s: ");
+                _insert_atomic_recursive(key, value, new_root._ofs());
+                printf("\n");
+
+                if(_p.set_root_ofs(old_root_ofs, new_root._ofs()))
+                    inserted = true;
+                else { printf("Failed to set root ofs 2 %d\n",attempt); ++attempt; }
             }
-
-            // Traverse down the copied arm and insert the key-value pair
-            _insert_atomic_recursive(key, value, copied_root._ofs());
-
-            // Compare-and-swap the root offset to update the tree atomically
-            if(_p.set_root_ofs(root_ofs, copied_root._ofs()))
-                inserted = true;
+            else
+            {
+                printf("insert ofs: ");
+                _insert_atomic_recursive(key, value, copied_root._ofs());
+                printf("\n");
+                if(_p.set_root_ofs(old_root_ofs, copied_root._ofs()))
+                    inserted = true;
+                else { printf("Failed to set root ofs 3 %d\n",attempt); ++attempt; }
+            }
         }
     }
 }
@@ -135,66 +149,55 @@ void b_tree::vacuum(const std::string& file_name)
     // rename temp file to file_name
 }
 
-b_tree_node b_tree::_copy_arm(int64_t key, int64_t node_ofs) {
+b_tree_node b_tree::_copy_arm(int64_t key, int64_t node_ofs)
+{
     b_tree_node current_node(_p, node_ofs);
     b_tree_node new_node(_p, current_node._min_degree(), current_node._leaf());
 
+    printf("%ld ", new_node._ofs());
+
     // Copy keys, values, and valid flags from the current node to the new node
     memcpy(new_node._mm.map().first, current_node._mm.map().first, _p.block_size());
-//    memcpy(new_node._keys_field, current_node._keys_field, sizeof(int64_t) * (current_node._min_degree() * 2 - 1));
-//    memcpy(new_node._vals_field, current_node._vals_field, sizeof(int64_t) * (current_node._min_degree() * 2 - 1));
-//    memcpy(new_node._valid_keys_field, current_node._valid_keys_field, sizeof(uint8_t) * (current_node._min_degree() * 2 - 1));
-
-    //new_node._set_num_keys(current_node._num_keys());
-    //printf("new_node.num_keys: %u\n", new_node._num_keys());
 
     int i = 0;
-    while (i < current_node._num_keys() && key > current_node._key(i)) {
+    while (i < current_node._num_keys() && key > current_node._key(i))
         i++;
-    }
 
-    if (current_node._leaf()) {
-        // If the current node is a leaf, return the new node
+    // If the current node is a leaf, return the new node
+    if (current_node._leaf())
         return new_node;
-    } else {
-        // If the current node is an internal node, recursively copy the child arm
-        b_tree_node child_node = _copy_arm(key, current_node._child_ofs(i));
 
-        // Update the child offset in the new node to point to the copied child arm
-        new_node._set_child_ofs(i, child_node._ofs());
+    // If the current node is an internal node, recursively copy the child arm
+    b_tree_node child_node = _copy_arm(key, current_node._child_ofs(i));
 
-        // Copy the remaining child offsets from the current node to the new node
-        for (int j = 0; j <= current_node._num_keys(); ++j) {
-            if (j != i) {
-                new_node._set_child_ofs(j, current_node._child_ofs(j));
-            }
-        }
+    // Update the child offset in the new node to point to the copied child arm
+    new_node._set_child_ofs(i, child_node._ofs());
 
-        return new_node;
-    }
+    return new_node;
 }
 
 void b_tree::_insert_atomic_recursive(int64_t key, int64_t value, int64_t node_ofs)
 {
     b_tree_node node(_p, node_ofs);
+    printf("%ld ", node._ofs());
 
-    if (node._leaf()) {
-        // If the node is a leaf, insert the key-value pair
+    // If the node is a leaf, insert the key-value pair
+    if (node._leaf())
         node._insert_non_full(key, value);
-    } else {
+    else
+    {
         // If the node is an internal node, find the appropriate child to descend into
         int i = 0;
-        while (i < node._num_keys() && key > node._key(i)) {
+        while (i < node._num_keys() && key > node._key(i))
             i++;
-        }
 
         b_tree_node child(_p, node._child_ofs(i));
         if (child._num_keys() == 2 * _min_degree - 1) {
             // If the child node is full, split it before descending
+            printf("split child ofs\n");
             node._split_child(i, child._ofs());
-            if (key > node._key(i)) {
+            if (key > node._key(i))
                 i++;
-            }
         }
 
         // Recursively insert the key-value pair into the appropriate child

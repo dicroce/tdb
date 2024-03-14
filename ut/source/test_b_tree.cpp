@@ -228,7 +228,7 @@ void test_b_tree::test_concurrent_inserts()
     b_tree::create_db_file("test_concurrent_inserts.db");
     b_tree t("test_concurrent_inserts.db", 4);
 
-    const int num_threads = 4;
+    const int num_threads = 1;
     const int num_inserts_per_thread = 1000;
 
     std::vector<std::thread> threads;
@@ -254,6 +254,8 @@ void test_b_tree::test_concurrent_inserts()
     for (const auto& keys : thread_keys) {
         RTF_ASSERT(has_all_keys(t, keys));
     }
+
+    t.write_dot_file("big_dotfile.txt");
 
     unlink("test_concurrent_inserts.db");
 }

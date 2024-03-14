@@ -109,38 +109,6 @@ b_tree_node::b_tree_node(const pager& p, int64_t ofs) :
     _child_ofs_field = (int64_t*)read_ptr;
 }
 
-b_tree_node& b_tree_node::operator=(const b_tree_node& obj)
-{
-    if (this != &obj)
-    {
-        _ofs_field = obj._ofs_field;
-        _mm = _p.map_page_from(_ofs_field);
-
-        auto read_ptr = _mm.map().first;
-
-        _min_degree_field = (uint16_t*)read_ptr;
-        read_ptr += sizeof(uint16_t);
-
-        _leaf_field = (uint16_t*)read_ptr;
-        read_ptr += sizeof(uint16_t);
-
-        _num_keys_field = (uint16_t*)read_ptr;
-        read_ptr += sizeof(uint16_t);
-
-        _keys_field = (int64_t*)read_ptr;
-        read_ptr += sizeof(int64_t) * ((*_min_degree_field * 2) - 1);
-
-        _valid_keys_field = (uint8_t*)read_ptr;
-        read_ptr += sizeof(uint8_t) * ((*_min_degree_field * 2) - 1);
-
-        _vals_field = (int64_t*)read_ptr;
-        read_ptr += sizeof(int64_t) * ((*_min_degree_field * 2) - 1);
-
-        _child_ofs_field = (int64_t*)read_ptr;
-    }
-    return *this;
-}
-
 void b_tree_node::_insert_non_full(int64_t k, int64_t v)
 {
     // Initialize index as index of rightmost element
@@ -196,30 +164,30 @@ void b_tree_node::_insert_non_full(int64_t k, int64_t v)
 
 void b_tree_node::_split_child(int i, int64_t ofs)
 {
-    b_tree_node y(_p, ofs);
+    b_tree_node original_node(_p, ofs);
 
     // Create a new node which is going to store (t-1) keys
-    // of y
-    b_tree_node z(_p, y._min_degree(), y._leaf());
-    z._set_num_keys(_min_degree() - 1);
+    // of original_node
+    b_tree_node new_node(_p, original_node._min_degree(), original_node._leaf());
+    new_node._set_num_keys(_min_degree() - 1);
  
-    // Copy the last (min_degree-1) keys of y to z
+    // Copy the last (min_degree-1) keys of original_node to new_node
     for (int j = 0; j < _min_degree()-1; j++)
     {
-        z._keys_field[j] = y._keys_field[j+_min_degree()];
-        z._valid_keys_field[j] = y._valid_keys_field[j+_min_degree()];
-        z._vals_field[j] = y._vals_field[j+_min_degree()];
+        new_node._keys_field[j] = original_node._keys_field[j+_min_degree()];
+        new_node._valid_keys_field[j] = original_node._valid_keys_field[j+_min_degree()];
+        new_node._vals_field[j] = original_node._vals_field[j+_min_degree()];
     }
  
-    // Copy the last min_degree children of y to z
-    if (y._leaf() == false)
+    // Copy the last min_degree children of original_node to new_node
+    if (original_node._leaf() == false)
     {
         for (int j = 0; j < _min_degree(); j++)
-            z._child_ofs_field[j] = y._child_ofs_field[j+_min_degree()];
+            new_node._child_ofs_field[j] = original_node._child_ofs_field[j+_min_degree()];
     }
  
-    // Reduce the number of keys in y
-    y._set_num_keys(_min_degree() - 1);
+    // Reduce the number of keys in original_node
+    original_node._set_num_keys(_min_degree() - 1);
  
     // Since this node is going to have a new child,
     // create space of new child
@@ -227,9 +195,9 @@ void b_tree_node::_split_child(int i, int64_t ofs)
         _child_ofs_field[j+1] = _child_ofs_field[j];
  
     // Link the new child to this node
-    _child_ofs_field[i+1] = z._ofs();
+    _child_ofs_field[i+1] = new_node._ofs();
  
-    // A key of y will move to this node. Find the location of
+    // A key of original_node will move to this node. Find the location of
     // new key and move all greater keys one space ahead
     for (int j = _num_keys()-1; j >= i; j--)
     {
@@ -238,10 +206,10 @@ void b_tree_node::_split_child(int i, int64_t ofs)
         _vals_field[j+1] = _vals_field[j];
     }
  
-    // Copy the middle key of y to this node
-    _keys_field[i] = y._keys_field[_min_degree()-1];
-    _valid_keys_field[i] = y._valid_keys_field[_min_degree()-1];
-    _vals_field[i] = y._vals_field[_min_degree()-1];
+    // Copy the middle key of original_node to this node
+    _keys_field[i] = original_node._keys_field[_min_degree()-1];
+    _valid_keys_field[i] = original_node._valid_keys_field[_min_degree()-1];
+    _vals_field[i] = original_node._vals_field[_min_degree()-1];
  
     // Increment count of keys in this node
     _set_num_keys(_num_keys() + 1);

@@ -8,7 +8,8 @@ using namespace std;
 
 pager::pager(const std::string& fileName) :
     _fileName(fileName),
-    _f(r_file::open(fileName, "r+"))
+    _f(r_file::open(fileName, "r+")),
+    _mm(map_page_from(0))
 {
 }
 
@@ -82,7 +83,6 @@ uint64_t pager::root_ofs() const
 bool pager::set_root_ofs(uint64_t lastVal, uint64_t newVal) const
 {
     return _update_root_ofs(lastVal, newVal);
-
 }
 
 void pager::sync() const
@@ -92,8 +92,7 @@ void pager::sync() const
 
 uint32_t pager::_read_nblocks() const
 {
-    auto mm = map_page_from(0);
-    auto mp = mm.map();
+    auto mp = _mm.map();
     return *((uint32_t*)mp.first);
 }
 
@@ -104,8 +103,7 @@ bool pager::_update_nblocks(uint32_t lastVal, uint32_t newVal) const
 
 uint64_t pager::_read_root_ofs() const
 {
-    auto mm = map_page_from(0);
-    auto mp = mm.map();
+    auto mp = _mm.map();
     return *((uint64_t*)(mp.first + 4));
 }
 
