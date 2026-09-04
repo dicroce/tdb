@@ -10,13 +10,24 @@ A database uses fixed 4 KiB pages. Internal pages contain separator keys and
 child page numbers; leaf pages contain key/value pairs and links to the next
 leaf. The public API currently supports signed 64-bit keys and values.
 
+`begin_read()` creates an explicit read transaction holding a shared lock.
+Its `search()` method returns a positioned `b_tree_iterator`. An iterator can
+be repositioned with `find()`, moved in key order with `next()` and `prev()`,
+and inspected with `key()` and `value()`. The read transaction must outlive all
+of its iterators. `get()` is a convenience point lookup.
+
+`begin_write()` creates an exclusive write transaction. Multiple inserts and
+removes can be buffered and made durable by one `commit()`. Destroying an
+uncommitted write transaction discards its changes. The tree-level `insert()`
+and `remove()` methods are one-operation convenience transactions.
+
 Writes are serialized within the process. Readers take a shared lock, allowing
 multiple simultaneous readers while ensuring that no reader observes a partial
 write.
 
 ### Durability
 
-Each mutation is a small redo transaction:
+Each committed write transaction uses redo logging:
 
 1. Modified pages are buffered in memory.
 2. Complete page after-images and a checksummed commit record are written to
@@ -34,4 +45,3 @@ undo records and per-page log sequence numbers.
 - Writer serialization is process-local, not cross-process.
 - Removed pages are recycled through an on-disk free-page list. The physical
   file is not shrunk, and `vacuum()` is not implemented.
-- Each public mutation is its own durable transaction; batching is future work.

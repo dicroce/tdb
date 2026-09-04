@@ -27,7 +27,7 @@ bool has_all_keys(T& t, const vector<int64_t>& keys)
 {
     for(auto k : keys)
     {
-        if(!t.search(k))
+        if(!t.get(k))
             return false;
     }
     return true;
@@ -52,7 +52,9 @@ void test_b_tree::setup()
     std::shuffle(begin(test_keys), end(test_keys), rng);
     std::shuffle(begin(test_vals), end(test_vals), rng);    
 
-    insert_all(t, test_keys);
+    auto write = t.begin_write();
+    insert_all(write, test_keys);
+    write.commit();
 }
 
 void test_b_tree::teardown()
@@ -68,6 +70,8 @@ void test_b_tree::teardown()
     remove_file("big_dotfile.txt");
     remove_file("test_remove_reuses_pages.db");
     remove_file("test_remove_reuses_pages.db.wal");
+    remove_file("test_explicit_write_transaction.db");
+    remove_file("test_explicit_write_transaction.db.wal");
 }
 
 void test_b_tree::test_CAS()
@@ -94,9 +98,9 @@ void test_b_tree::test_basic()
 {
     b_tree t("test.db", 4);
 
-    RTF_ASSERT(t.search(47) == 147);
-    RTF_ASSERT(t.search(0) == 100);
-    RTF_ASSERT(t.search(99) == 199);
+    RTF_ASSERT(t.get(47) == 147);
+    RTF_ASSERT(t.get(0) == 100);
+    RTF_ASSERT(t.get(99) == 199);
 }
 
 void test_b_tree::test_duplicate_key_insert()
@@ -122,7 +126,7 @@ void test_b_tree::test_basic_remove()
 
     t.remove(30);
 
-    RTF_ASSERT(!t.search(30));
+    RTF_ASSERT(!t.get(30));
     RTF_ASSERT(has_all_keys(t, {10, 20, 40, 50, 60, 70, 80, 90, 100}));
 
 }
@@ -139,9 +143,9 @@ void test_b_tree::test_lots_of_inserts_and_removes()
 
         auto k = keys.back();
         keys.pop_back();
-        RTF_ASSERT(t.search(k));
+        RTF_ASSERT(t.get(k));
         t.remove(k);
-        RTF_ASSERT(!t.search(k));
+        RTF_ASSERT(!t.get(k));
     }
 }
 
@@ -153,7 +157,11 @@ void test_b_tree::test_insert_ascending_order()
     std::vector<int64_t> keys(100);
     std::iota(begin(keys), end(keys), 1);
 
-    insert_all(t, keys);
+    {
+        auto write = t.begin_write();
+        insert_all(write, keys);
+        write.commit();
+    }
 
     RTF_ASSERT(has_all_keys(t, keys));
 
@@ -167,7 +175,11 @@ void test_b_tree::test_insert_descending_order()
     std::vector<int64_t> keys(100);
     std::iota(rbegin(keys), rend(keys), 1);
 
-    insert_all(t, keys);
+    {
+        auto write = t.begin_write();
+        insert_all(write, keys);
+        write.commit();
+    }
 
     RTF_ASSERT(has_all_keys(t, keys));
 
@@ -182,15 +194,24 @@ void test_b_tree::test_remove_random_order()
     std::iota(begin(keys), end(keys), 1);
     std::shuffle(begin(keys), end(keys), std::default_random_engine{});
 
-    insert_all(t, keys);
+    {
+        auto write = t.begin_write();
+        insert_all(write, keys);
+        write.commit();
+    }
 
     std::shuffle(begin(keys), end(keys), std::default_random_engine{});
 
-    for (auto k : keys) {
-        RTF_ASSERT(t.search(k));
-        t.remove(k);
-        RTF_ASSERT(!t.search(k));
+    {
+        auto write = t.begin_write();
+        for (auto k : keys)
+            write.remove(k);
+        write.commit();
     }
+
+    auto read = t.begin_read();
+    for (auto k : keys)
+        RTF_ASSERT(!read.get(k));
 
 }
 
@@ -201,7 +222,7 @@ void test_b_tree::test_search_non_existent_keys()
     std::vector<int64_t> non_existent_keys = {-10, -5, 200, 500};
 
     for (auto k : non_existent_keys) {
-        RTF_ASSERT(!t.search(k));
+        RTF_ASSERT(!t.get(k));
     }
 }
 
@@ -214,18 +235,30 @@ void test_b_tree::test_large_number_of_keys()
     std::iota(begin(keys), end(keys), 1);
     std::shuffle(begin(keys), end(keys), std::default_random_engine{});
 
-    insert_all(t, keys);
+    {
+        auto write = t.begin_write();
+        insert_all(write, keys);
+        write.commit();
+    }
 
-    RTF_ASSERT(has_all_keys(t, keys));
+    {
+        auto read = t.begin_read();
+        RTF_ASSERT(has_all_keys(read, keys));
+    }
 
     std::shuffle(begin(keys), end(keys), std::default_random_engine{});
 
-    for (auto k : keys) {
-        t.remove(k);
+    {
+        auto write = t.begin_write();
+        for (auto k : keys)
+            write.remove(k);
+        write.commit();
     }
 
-    for (auto k : keys) {
-        RTF_ASSERT(!t.search(k));
+    {
+        auto read = t.begin_read();
+        for (auto k : keys)
+            RTF_ASSERT(!read.get(k));
     }
 
 }
@@ -244,11 +277,13 @@ void test_b_tree::test_concurrent_inserts()
     // Launch multiple threads to perform concurrent inserts
     for (int i = 0; i < num_threads; ++i) {
         threads.emplace_back([&, i]() {
+            auto write = t.begin_write();
             for (int j = 0; j < num_inserts_per_thread; ++j) {
                 int64_t key = i * num_inserts_per_thread + j;
                 thread_keys[i].push_back(key);
-                t.insert(key, key + 100);
+                write.insert(key, key + 100);
             }
+            write.commit();
         });
     }
 
@@ -258,8 +293,11 @@ void test_b_tree::test_concurrent_inserts()
     }
 
     // Verify that all inserted keys are present in the B-tree
-    for (const auto& keys : thread_keys) {
-        RTF_ASSERT(has_all_keys(t, keys));
+    {
+        auto read = t.begin_read();
+        for (const auto& keys : thread_keys) {
+            RTF_ASSERT(has_all_keys(read, keys));
+        }
     }
 
     t.write_dot_file("big_dotfile.txt");
@@ -270,9 +308,9 @@ void test_b_tree::test_delete_and_reinsert()
 {
     b_tree t("test.db", 4);
     t.remove(47);
-    RTF_ASSERT(!t.search(47));
+    RTF_ASSERT(!t.get(47));
     t.insert(47, 947);
-    RTF_ASSERT(t.search(47) == 947);
+    RTF_ASSERT(t.get(47) == 947);
 }
 
 void test_b_tree::test_concurrent_readers()
@@ -283,9 +321,10 @@ void test_b_tree::test_concurrent_readers()
     for (int reader = 0; reader < 8; ++reader)
     {
         readers.emplace_back([&]() {
+            auto read = t.begin_read();
             for (int pass = 0; pass < 20; ++pass)
                 for (int64_t key = 0; key < 100; ++key)
-                    if (t.search(key) != key + 100)
+                    if (read.get(key) != key + 100)
                         all_found = false;
         });
     }
@@ -300,21 +339,104 @@ void test_b_tree::test_remove_reuses_pages()
     std::uintmax_t high_water_size = 0;
     {
         b_tree t(path, 2);
-        for (int64_t key = 0; key < 500; ++key)
-            t.insert(key, key + 1000);
+        {
+            auto write = t.begin_write();
+            for (int64_t key = 0; key < 500; ++key)
+                write.insert(key, key + 1000);
+            write.commit();
+        }
         high_water_size = std::filesystem::file_size(path);
 
+        {
+            auto write = t.begin_write();
+            for (int64_t key = 0; key < 500; ++key)
+                write.remove(key);
+            write.commit();
+        }
+        auto read = t.begin_read();
         for (int64_t key = 0; key < 500; ++key)
-            t.remove(key);
-        for (int64_t key = 0; key < 500; ++key)
-            RTF_ASSERT(!t.search(key));
+            RTF_ASSERT(!read.get(key));
     }
     {
         b_tree t(path, 2);
+        {
+            auto write = t.begin_write();
+            for (int64_t key = 500; key < 1000; ++key)
+                write.insert(key, key + 1000);
+            write.commit();
+        }
+        auto read = t.begin_read();
         for (int64_t key = 500; key < 1000; ++key)
-            t.insert(key, key + 1000);
-        for (int64_t key = 500; key < 1000; ++key)
-            RTF_ASSERT(t.search(key) == key + 1000);
+            RTF_ASSERT(read.get(key) == key + 1000);
     }
     RTF_ASSERT(std::filesystem::file_size(path) == high_water_size);
+}
+
+void test_b_tree::test_iterator()
+{
+    b_tree t("test.db", 4);
+
+    auto read = t.begin_read();
+    auto iterator = read.search(0);
+    RTF_ASSERT(iterator);
+    for (int64_t key = 0; key < 100; ++key)
+    {
+        RTF_ASSERT(iterator.key() == key);
+        RTF_ASSERT(iterator.value() == key + 100);
+        if (key < 99) RTF_ASSERT(iterator.next());
+    }
+    RTF_ASSERT(!iterator.next());
+    RTF_ASSERT(!iterator);
+
+    RTF_ASSERT(iterator.find(99));
+    for (int64_t key = 99; key >= 0; --key)
+    {
+        RTF_ASSERT(iterator.key() == key);
+        if (key > 0) RTF_ASSERT(iterator.prev());
+    }
+    RTF_ASSERT(!iterator.prev());
+
+    RTF_ASSERT(iterator.find(50));
+    RTF_ASSERT(iterator.next());
+    RTF_ASSERT(iterator.key() == 51);
+    RTF_ASSERT(iterator.prev());
+    RTF_ASSERT(iterator.key() == 50);
+
+    RTF_ASSERT(!iterator.find(500));
+    RTF_ASSERT(!iterator.next());
+    RTF_ASSERT(!iterator.prev());
+    RTF_ASSERT_THROWS(iterator.key(), std::logic_error);
+    RTF_ASSERT_THROWS(iterator.value(), std::logic_error);
+}
+
+void test_b_tree::test_explicit_write_transaction()
+{
+    const std::string path = "test_explicit_write_transaction.db";
+    b_tree::create_db_file(path);
+    b_tree t(path, 2);
+    {
+        auto write = t.begin_write();
+        for (int64_t key = 0; key < 500; ++key)
+            write.insert(key, key + 1000);
+        write.commit();
+    }
+    for (int64_t key = 0; key < 500; ++key)
+        RTF_ASSERT(t.get(key) == key + 1000);
+
+    {
+        auto write = t.begin_write();
+        for (int64_t key = 0; key < 400; ++key)
+            write.remove(key);
+        write.commit();
+    }
+    for (int64_t key = 0; key < 400; ++key)
+        RTF_ASSERT(!t.get(key));
+    for (int64_t key = 400; key < 500; ++key)
+        RTF_ASSERT(t.get(key) == key + 1000);
+
+    {
+        auto write = t.begin_write();
+        write.insert(2000, 3000);
+    }
+    RTF_ASSERT(!t.get(2000));
 }

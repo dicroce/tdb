@@ -20,6 +20,8 @@ public:
       TEST(test_b_tree::test_delete_and_reinsert);
       TEST(test_b_tree::test_concurrent_readers);
       TEST(test_b_tree::test_remove_reuses_pages);
+      TEST(test_b_tree::test_iterator);
+      TEST(test_b_tree::test_explicit_write_transaction);
     RTF_FIXTURE_END();
 
     virtual ~test_b_tree() throw() {}
@@ -42,4 +44,6 @@ public:
     void test_delete_and_reinsert();
     void test_concurrent_readers();
     void test_remove_reuses_pages();
+    void test_iterator();
+    void test_explicit_write_transaction();
 };

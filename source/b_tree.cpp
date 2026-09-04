@@ -270,10 +270,31 @@ b_tree::b_tree(const string& file_name, uint16_t min_degree) :
     _max_keys = static_cast<uint16_t>(configured_max_keys);
 }
 
+b_tree_read_transaction b_tree::begin_read()
+{
+    return b_tree_read_transaction(*this);
+}
+
+b_tree_write_transaction b_tree::begin_write()
+{
+    return b_tree_write_transaction(*this);
+}
+
+optional<int64_t> b_tree::get(int64_t key)
+{
+    auto transaction = begin_read();
+    return transaction.get(key);
+}
+
 void b_tree::insert(int64_t key, int64_t value)
 {
-    unique_lock lock(_tree_mutex);
-    auto tx = _pager.begin_transaction();
+    auto transaction = begin_write();
+    transaction.insert(key, value);
+    transaction.commit();
+}
+
+void b_tree::insert_unlocked(pager::transaction& tx, int64_t key, int64_t value)
+{
 
     if (tx.root_page() == 0)
     {
@@ -283,7 +304,6 @@ void b_tree::insert(int64_t key, int64_t value)
         root.values.push_back(value);
         encode_node(tx.write(root_page), root);
         tx.set_root_page(root_page);
-        tx.commit();
         return;
     }
 
@@ -359,33 +379,210 @@ void b_tree::insert(int64_t key, int64_t value)
         encode_node(tx.write(new_root), root);
         tx.set_root_page(new_root);
     }
-    tx.commit();
 }
 
-optional<int64_t> b_tree::search(int64_t key)
+optional<b_tree::iterator_position> b_tree::seek_unlocked(int64_t key, seek_mode mode)
 {
-    shared_lock lock(_tree_mutex);
     uint64_t page_number = _pager.root_page();
+    uint64_t predecessor_subtree = 0;
     while (page_number != 0)
     {
         node current = decode_node(_pager.read(page_number));
         if (current.leaf)
         {
             auto position = lower_bound(current.keys.begin(), current.keys.end(), key);
-            if (position == current.keys.end() || *position != key) return nullopt;
-            return current.values[static_cast<size_t>(position - current.keys.begin())];
+            if (mode == seek_mode::exact)
+            {
+                if (position == current.keys.end() || *position != key) return nullopt;
+                const size_t index = static_cast<size_t>(position - current.keys.begin());
+                return iterator_position{page_number, index, current.keys[index], current.values[index]};
+            }
+
+            if (position != current.keys.begin())
+            {
+                const size_t index = static_cast<size_t>((position - current.keys.begin()) - 1);
+                return iterator_position{page_number, index, current.keys[index], current.values[index]};
+            }
+            if (predecessor_subtree == 0) return nullopt;
+            node predecessor = decode_node(_pager.read(predecessor_subtree));
+            while (!predecessor.leaf)
+            {
+                predecessor_subtree = predecessor.children.back();
+                predecessor = decode_node(_pager.read(predecessor_subtree));
+            }
+            if (predecessor.keys.empty()) return nullopt;
+            const size_t index = predecessor.keys.size() - 1;
+            return iterator_position{predecessor_subtree, index,
+                                     predecessor.keys[index], predecessor.values[index]};
         }
-        const size_t child_index = upper_bound(current.keys.begin(), current.keys.end(), key)
-            - current.keys.begin();
+
+        const size_t child_index = (mode == seek_mode::less)
+            ? lower_bound(current.keys.begin(), current.keys.end(), key) - current.keys.begin()
+            : upper_bound(current.keys.begin(), current.keys.end(), key) - current.keys.begin();
+        if (mode == seek_mode::less && child_index > 0)
+            predecessor_subtree = current.children[child_index - 1];
         page_number = current.children[child_index];
     }
     return nullopt;
 }
 
+b_tree_read_transaction::b_tree_read_transaction(b_tree& tree) :
+    _tree(&tree), _lock(b_tree::_tree_mutex)
+{
+}
+
+optional<int64_t> b_tree_read_transaction::get(int64_t key)
+{
+    auto position = _tree->seek_unlocked(key, b_tree::seek_mode::exact);
+    if (!position) return nullopt;
+    return position->value;
+}
+
+b_tree_iterator b_tree_read_transaction::search(int64_t key)
+{
+    return b_tree_iterator(*this, key);
+}
+
+b_tree_iterator b_tree_read_transaction::iterator()
+{
+    return b_tree_iterator(*this);
+}
+
+b_tree_iterator::b_tree_iterator(b_tree_read_transaction& transaction) :
+    _transaction(&transaction), _leaf_page(0), _index(0),
+    _key(0), _value(0), _valid(false)
+{
+}
+
+b_tree_iterator::b_tree_iterator(b_tree_read_transaction& transaction, int64_t key) :
+    b_tree_iterator(transaction)
+{
+    find(key);
+}
+
+void b_tree_iterator::invalidate() noexcept
+{
+    _leaf_page = 0;
+    _index = 0;
+    _valid = false;
+}
+
+bool b_tree_iterator::find(int64_t key)
+{
+    auto position = _transaction->_tree->seek_unlocked(key, b_tree::seek_mode::exact);
+    if (!position)
+    {
+        invalidate();
+        return false;
+    }
+    _leaf_page = position->leaf_page;
+    _index = position->index;
+    _key = position->key;
+    _value = position->value;
+    _valid = true;
+    return _valid;
+}
+
+bool b_tree_iterator::next()
+{
+    if (!_valid) return false;
+    node leaf = decode_node(_transaction->_tree->_pager.read(_leaf_page));
+    ++_index;
+    while (_index >= leaf.keys.size())
+    {
+        if (leaf.next_leaf == 0)
+        {
+            invalidate();
+            return false;
+        }
+        _leaf_page = leaf.next_leaf;
+        leaf = decode_node(_transaction->_tree->_pager.read(_leaf_page));
+        _index = 0;
+    }
+    _key = leaf.keys[_index];
+    _value = leaf.values[_index];
+    return true;
+}
+
+bool b_tree_iterator::prev()
+{
+    if (!_valid) return false;
+    if (_index > 0)
+    {
+        node leaf = decode_node(_transaction->_tree->_pager.read(_leaf_page));
+        --_index;
+        _key = leaf.keys[_index];
+        _value = leaf.values[_index];
+        return true;
+    }
+    auto position = _transaction->_tree->seek_unlocked(_key, b_tree::seek_mode::less);
+    if (!position)
+    {
+        invalidate();
+        return false;
+    }
+    _leaf_page = position->leaf_page;
+    _index = position->index;
+    _key = position->key;
+    _value = position->value;
+    return true;
+}
+
+bool b_tree_iterator::valid() const noexcept { return _valid; }
+b_tree_iterator::operator bool() const noexcept { return valid(); }
+
+int64_t b_tree_iterator::key() const
+{
+    if (!_valid) throw logic_error("Cannot read the key of an invalid B+tree iterator.");
+    return _key;
+}
+
+int64_t b_tree_iterator::value() const
+{
+    if (!_valid) throw logic_error("Cannot read the value of an invalid B+tree iterator.");
+    return _value;
+}
+
+b_tree_write_transaction::b_tree_write_transaction(b_tree& tree) :
+    _tree(&tree), _lock(b_tree::_tree_mutex), _transaction(tree._pager),
+    _committed(false)
+{
+}
+
+void b_tree_write_transaction::require_active() const
+{
+    if (_committed) throw logic_error("The B+tree write transaction has committed.");
+}
+
+void b_tree_write_transaction::insert(int64_t key, int64_t value)
+{
+    require_active();
+    _tree->insert_unlocked(_transaction, key, value);
+}
+
+void b_tree_write_transaction::remove(int64_t key)
+{
+    require_active();
+    _tree->remove_unlocked(_transaction, key);
+}
+
+void b_tree_write_transaction::commit()
+{
+    require_active();
+    _transaction.commit();
+    _committed = true;
+    _lock.unlock();
+}
+
 void b_tree::remove(int64_t key)
 {
-    unique_lock lock(_tree_mutex);
-    auto tx = _pager.begin_transaction();
+    auto transaction = begin_write();
+    transaction.remove(key);
+    transaction.commit();
+}
+
+void b_tree::remove_unlocked(pager::transaction& tx, int64_t key)
+{
     const uint64_t original_root = tx.root_page();
     if (original_root == 0) return;
     const size_t minimum_keys = _max_keys / 2;
@@ -439,7 +636,6 @@ void b_tree::remove(int64_t key)
         tx.release(old_root);
     }
     tx.set_root_page(root_page);
-    tx.commit();
 }
 
 void b_tree::write_dot_file(const string& file_name)
