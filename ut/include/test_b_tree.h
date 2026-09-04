@@ -22,6 +22,8 @@ public:
       TEST(test_b_tree::test_remove_reuses_pages);
       TEST(test_b_tree::test_iterator);
       TEST(test_b_tree::test_explicit_write_transaction);
+      TEST(test_b_tree::test_row_store);
+      TEST(test_b_tree::test_atomic_row_and_index_transaction);
     RTF_FIXTURE_END();
 
     virtual ~test_b_tree() throw() {}
@@ -46,4 +48,6 @@ public:
     void test_remove_reuses_pages();
     void test_iterator();
     void test_explicit_write_transaction();
+    void test_row_store();
+    void test_atomic_row_and_index_transaction();
 };

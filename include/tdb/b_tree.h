@@ -12,6 +12,7 @@
 class b_tree;
 class b_tree_read_transaction;
 class b_tree_write_transaction;
+class row_store;
 
 class b_tree_iterator
 {
@@ -59,6 +60,7 @@ public:
 private:
     friend class b_tree;
     friend class b_tree_iterator;
+    friend class row_store;
     explicit b_tree_read_transaction(b_tree& tree);
 
     b_tree* _tree;
@@ -79,6 +81,7 @@ public:
 
 private:
     friend class b_tree;
+    friend class row_store;
     explicit b_tree_write_transaction(b_tree& tree);
     void require_active() const;
 
@@ -108,6 +111,7 @@ private:
     friend class b_tree_iterator;
     friend class b_tree_read_transaction;
     friend class b_tree_write_transaction;
+    friend class row_store;
 
     struct iterator_position
     {

@@ -27,6 +27,8 @@ public:
         void release(std::uint64_t page_number);
         std::uint64_t root_page() const;
         void set_root_page(std::uint64_t page_number);
+        std::uint64_t row_page() const;
+        void set_row_page(std::uint64_t page_number);
         void commit();
 
     private:
@@ -34,6 +36,7 @@ public:
         std::map<std::uint64_t, page> _pages;
         std::set<std::uint64_t> _dirty_pages;
         std::uint64_t _root_page;
+        std::uint64_t _row_page;
         std::uint64_t _page_count;
         std::uint64_t _free_page;
         bool _committed;
@@ -47,6 +50,7 @@ public:
 
     page read(std::uint64_t page_number) const;
     std::uint64_t root_page() const;
+    std::uint64_t row_page() const;
     transaction begin_transaction();
 
 private:

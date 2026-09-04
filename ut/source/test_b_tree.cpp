@@ -1,6 +1,7 @@
 
 #include "test_b_tree.h"
 #include "tdb/b_tree.h"
+#include "tdb/row_store.h"
 #include <algorithm>
 #include <numeric>
 #include <random>
@@ -72,6 +73,10 @@ void test_b_tree::teardown()
     remove_file("test_remove_reuses_pages.db.wal");
     remove_file("test_explicit_write_transaction.db");
     remove_file("test_explicit_write_transaction.db.wal");
+    remove_file("test_row_store.db");
+    remove_file("test_row_store.db.wal");
+    remove_file("test_atomic_row_and_index.db");
+    remove_file("test_atomic_row_and_index.db.wal");
 }
 
 void test_b_tree::test_CAS()
@@ -439,4 +444,78 @@ void test_b_tree::test_explicit_write_transaction()
         write.insert(2000, 3000);
     }
     RTF_ASSERT(!t.get(2000));
+}
+
+void test_b_tree::test_row_store()
+{
+    const string path = "test_row_store.db";
+    b_tree::create_db_file(path);
+    b_tree database(path, 4);
+    row_store rows;
+    vector<uint8_t> first{0, 1, 2, 0, 255};
+    vector<uint8_t> empty;
+    vector<uint8_t> large(1000);
+    iota(large.begin(), large.end(), uint8_t{0});
+
+    row_id first_id = 0;
+    row_id empty_id = 0;
+    vector<row_id> large_ids;
+    {
+        auto write = database.begin_write();
+        first_id = rows.insert(write, first);
+        empty_id = rows.insert(write, empty);
+        for (int i = 0; i < 12; ++i)
+            large_ids.push_back(rows.insert(write, large));
+        write.commit();
+    }
+    {
+        auto read = database.begin_read();
+        RTF_ASSERT(rows.get(read, first_id) == first);
+        RTF_ASSERT(rows.get(read, empty_id) == empty);
+        for (row_id id : large_ids) RTF_ASSERT(rows.get(read, id) == large);
+    }
+
+    row_id replacement_id = 0;
+    {
+        auto write = database.begin_write();
+        RTF_ASSERT(rows.remove(write, first_id));
+        RTF_ASSERT(!rows.remove(write, first_id));
+        replacement_id = rows.insert(write, vector<uint8_t>{9, 8, 7});
+        RTF_ASSERT(replacement_id != first_id);
+        write.commit();
+    }
+    {
+        auto read = database.begin_read();
+        RTF_ASSERT(!rows.get(read, first_id));
+        RTF_ASSERT(rows.get(read, replacement_id) == vector<uint8_t>({9, 8, 7}));
+    }
+}
+
+void test_b_tree::test_atomic_row_and_index_transaction()
+{
+    const string path = "test_atomic_row_and_index.db";
+    b_tree::create_db_file(path);
+    b_tree database(path, 4);
+    row_store rows;
+    {
+        auto write = database.begin_write();
+        const row_id id = rows.insert(write, vector<uint8_t>{1, 2, 3});
+        write.insert(10, static_cast<int64_t>(id));
+    }
+    RTF_ASSERT(!database.get(10));
+
+    row_id committed_id = 0;
+    {
+        auto write = database.begin_write();
+        committed_id = rows.insert(write, vector<uint8_t>{4, 5, 6});
+        write.insert(10, static_cast<int64_t>(committed_id));
+        write.commit();
+    }
+    {
+        auto read = database.begin_read();
+        auto indexed_id = read.get(10);
+        RTF_ASSERT(indexed_id == static_cast<int64_t>(committed_id));
+        RTF_ASSERT(rows.get(read, static_cast<row_id>(*indexed_id)) ==
+                   vector<uint8_t>({4, 5, 6}));
+    }
 }

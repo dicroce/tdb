@@ -28,6 +28,7 @@ struct alignas(8) database_header
     uint64_t root_page;
     uint64_t page_count;
     uint64_t free_page;
+    uint64_t row_page;
 };
 
 struct wal_header
@@ -72,17 +73,17 @@ database_header decode_header(const pager::page& page)
     memcpy(&result, page.data(), sizeof(result));
     if (result.magic != database_magic || result.version != database_version ||
         result.page_size != pager::page_size || result.page_count == 0 ||
-        result.free_page >= result.page_count)
+        result.free_page >= result.page_count || result.row_page >= result.page_count)
         throw runtime_error("Unsupported or corrupt tdb database header.");
     return result;
 }
 
 void encode_header(pager::page& page, uint64_t root_page, uint64_t page_count,
-                   uint64_t free_page)
+                   uint64_t free_page, uint64_t row_page)
 {
     database_header header{database_magic, database_version,
                            static_cast<uint32_t>(pager::page_size),
-                           root_page, page_count, free_page};
+                           root_page, page_count, free_page, row_page};
     page.fill(0);
     memcpy(page.data(), &header, sizeof(header));
 }
@@ -100,7 +101,7 @@ void pager::create(const string& file_name)
 {
     auto file = r_file::open(file_name, "w+b");
     page header_page{};
-    encode_header(header_page, 0, 1, 0);
+    encode_header(header_page, 0, 1, 0, 0);
     block_write_file(header_page.data(), header_page.size(), file);
     sync_file(file);
     remove_file(file_name + ".wal");
@@ -118,6 +119,11 @@ pager::page pager::read(uint64_t page_number) const
 uint64_t pager::root_page() const
 {
     return decode_header(read(0)).root_page;
+}
+
+uint64_t pager::row_page() const
+{
+    return decode_header(read(0)).row_page;
 }
 
 pager::transaction pager::begin_transaction()
@@ -212,10 +218,12 @@ void pager::recover()
 }
 
 pager::transaction::transaction(pager& owner) :
-    _owner(owner), _root_page(0), _page_count(0), _free_page(0), _committed(false)
+    _owner(owner), _root_page(0), _row_page(0), _page_count(0), _free_page(0),
+    _committed(false)
 {
     auto header = decode_header(_owner.read(0));
     _root_page = header.root_page;
+    _row_page = header.row_page;
     _page_count = header.page_count;
     _free_page = header.free_page;
 }
@@ -268,11 +276,13 @@ void pager::transaction::release(uint64_t page_number)
 
 uint64_t pager::transaction::root_page() const { return _root_page; }
 void pager::transaction::set_root_page(uint64_t page_number) { _root_page = page_number; }
+uint64_t pager::transaction::row_page() const { return _row_page; }
+void pager::transaction::set_row_page(uint64_t page_number) { _row_page = page_number; }
 
 void pager::transaction::commit()
 {
     if (_committed) throw logic_error("Transaction has already committed.");
-    encode_header(write(0), _root_page, _page_count, _free_page);
+    encode_header(write(0), _root_page, _page_count, _free_page, _row_page);
     map<uint64_t, page> dirty;
     for (uint64_t page_number : _dirty_pages)
         dirty.emplace(page_number, _pages.at(page_number));

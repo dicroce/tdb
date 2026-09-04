@@ -11,6 +11,8 @@ endif()
 
 add_library (tdb include/tdb/b_tree.h
                  source/b_tree.cpp
+                 source/row_store.cpp
+                 include/tdb/row_store.h
                  include/tdb/file_utils.h
                  source/file_utils.cpp
                  include/tdb/pager.h
