@@ -2,14 +2,21 @@
 #ifndef __file_utils_h
 #define __file_utils_h
 
-#include <map>
+#include <cstdio>
 #include <cstring>
 #include <cstdint>
 #include <cstdlib>
 #include <stdexcept>
+#include <string>
+#include <utility>
+
+#ifdef _WIN32
+#include <Windows.h>
+#else
 #include <sys/mman.h>
 #include <unistd.h>
 #include <sys/types.h>
+#endif
 
 template<typename T, typename F>
 void block_write_file(const T* p, size_t size, const F& f, size_t blockSize = 4096)
@@ -132,6 +139,8 @@ public:
     }
 
     void advise(void* addr, size_t length, int advice) const;
+    void flush(bool synchronous = true) const;
+    static uint64_t allocation_granularity();
 
 private:
     void _close() noexcept;
@@ -141,6 +150,15 @@ private:
     void* _mem;
     uint64_t _length;
     uint64_t _mapOffset;
+#ifdef _WIN32
+    HANDLE _fileHandle;
+    HANDLE _mapHandle;
+#endif
 };
+
+int file_number(FILE* f);
+void resize_file(FILE* f, uint64_t size);
+void sync_file(FILE* f);
+void remove_file(const std::string& path);
 
 #endif

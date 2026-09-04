@@ -15,12 +15,5 @@ target_link_libraries(
     tdb_ut LINK_PUBLIC 
     tdb
 )
-if(CMAKE_SYSTEM MATCHES "Linux-")
-    target_link_libraries(
-        tdb_ut PUBLIC
-        pthread
-        dl
-        uuid
-    )
-elseif(CMAKE_SYSTEM MATCHES "Windows")
-endif(CMAKE_SYSTEM MATCHES "Linux-")
+find_package(Threads REQUIRED)
+target_link_libraries(tdb_ut PUBLIC Threads::Threads)

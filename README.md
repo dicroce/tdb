@@ -1,10 +1,37 @@
 ## tdb
 
-tdb is a work in progress consisting of various components useful for creating a database. Currently, the most useful component here is probably the b_tree.
+tdb is a small, educational disk-based B+tree. It aims to keep the tree and
+durability algorithms readable while still providing behavior that is useful in
+real programs.
 
 ### Goals
 
-A tdb database will ultimately consist of a number of files. Users of tdb can hopefully pick and choose the components they want to use.
+A database uses fixed 4 KiB pages. Internal pages contain separator keys and
+child page numbers; leaf pages contain key/value pairs and links to the next
+leaf. The public API currently supports signed 64-bit keys and values.
 
-#### Log Structured Storage
-#### Lazy Remove
+Writes are serialized within the process. Readers take a shared lock, allowing
+multiple simultaneous readers while ensuring that no reader observes a partial
+write.
+
+### Durability
+
+Each mutation is a small redo transaction:
+
+1. Modified pages are buffered in memory.
+2. Complete page after-images and a checksummed commit record are written to
+   `<database>.wal`.
+3. The WAL is flushed to durable storage.
+4. The pages are applied to the database and the database is flushed.
+5. The WAL is removed.
+
+On open, a complete committed WAL is replayed idempotently. An incomplete or
+corrupt WAL is discarded. Full-page logging is intentionally simple; it avoids
+undo records and per-page log sequence numbers.
+
+### Deliberate limitations
+
+- Writer serialization is process-local, not cross-process.
+- Removing a key does not yet merge or rebalance underfull pages.
+- Freed pages are not yet reused, and `vacuum()` is not implemented.
+- Each public mutation is its own durable transaction; batching is future work.

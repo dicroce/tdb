@@ -3,13 +3,13 @@
 #include <time.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#ifdef IS_WINDOWS
+#ifdef _WIN32
 #include <Windows.h>
 #include <tchar.h> 
 #include <stdio.h>
 #include <strsafe.h>
 #endif
-#ifdef IS_LINUX
+#ifndef _WIN32
 #include <sys/time.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -19,7 +19,7 @@ using namespace std;
 
 vector<shared_ptr<test_fixture>> _test_fixtures;
 
-#ifdef IS_WINDOWS
+#ifdef _WIN32
 int64_t GetSystemTimeAsUnixTime()
 {
    //Get the number of seconds since January 1, 1970 12:00am UTC
@@ -44,10 +44,10 @@ int64_t GetSystemTimeAsUnixTime()
 
 void rtf_usleep(unsigned int usec)
 {
-#ifdef IS_LINUX
+#ifndef _WIN32
     usleep(usec);
 #endif
-#ifdef IS_WINDOWS
+#ifdef _WIN32
     Sleep(usec / 1000);
 #endif
 }
@@ -129,7 +129,7 @@ vector<string> rtf_regular_files_in_dir(const string& dir)
 {
     vector<string> names;
 
-#ifdef IS_LINUX
+#ifndef _WIN32
     DIR* d = opendir(dir.c_str());
     if(!d)
         throw std::runtime_error("Unable to open directory");
@@ -150,7 +150,7 @@ vector<string> rtf_regular_files_in_dir(const string& dir)
     closedir(d);
 #endif
 
-#ifdef IS_WINDOWS
+#ifdef _WIN32
    WIN32_FIND_DATA ffd;
    TCHAR szDir[1024];
    HANDLE hFind;
@@ -187,10 +187,10 @@ int main( int argc, char* argv[] )
     if( argc > 1 )
         fixture_name = argv[1];
 
-#ifdef IS_WINDOWS
+#ifdef _WIN32
     srand( (unsigned int)GetSystemTimeAsUnixTime() );
 #endif
-#ifdef IS_LINUX
+#ifndef _WIN32
     srand( time(0) );
 #endif
 
@@ -215,8 +215,5 @@ int main( int argc, char* argv[] )
         printf("\nSuccess.\n");
     else printf("\nFailure.\n");
 
-    if(something_failed)
-        system("/bin/bash -c 'read -p \"Press Any Key\"'");
-
-    return 0;
+    return something_failed ? 1 : 0;
 }

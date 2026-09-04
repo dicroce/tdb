@@ -1,113 +1,253 @@
-
 #include "tdb/pager.h"
-#include "tdb/file_utils.h"
-#include <string>
+
+#include <algorithm>
+#include <cstring>
+#include <filesystem>
+#include <stdexcept>
 #include <vector>
+
+#ifdef _WIN32
+#include <io.h>
+#endif
 
 using namespace std;
 
-pager::pager(const std::string& fileName) :
-    _fileName(fileName),
-    _f(r_file::open(fileName, "r+")),
-    _mm(map_page_from(0))
+namespace
 {
+constexpr uint64_t database_magic = 0x31424454534c5053ULL;
+constexpr uint32_t database_version = 2;
+constexpr uint64_t wal_magic = 0x314c415742445454ULL;
+constexpr uint64_t wal_commit_magic = 0x54494d4d4f434254ULL;
+
+struct alignas(8) database_header
+{
+    uint64_t magic;
+    uint32_t version;
+    uint32_t page_size;
+    uint64_t root_page;
+    uint64_t page_count;
+};
+
+struct wal_header
+{
+    uint64_t magic;
+    uint32_t version;
+    uint32_t page_size;
+    uint64_t record_count;
+};
+
+struct wal_footer
+{
+    uint64_t commit_magic;
+    uint64_t checksum;
+};
+
+uint64_t checksum_bytes(uint64_t hash, const void* data, size_t size)
+{
+    constexpr uint64_t fnv_prime = 1099511628211ULL;
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < size; ++i)
+    {
+        hash ^= bytes[i];
+        hash *= fnv_prime;
+    }
+    return hash;
 }
 
-pager::~pager() noexcept
+void seek_file(FILE* file, uint64_t offset)
 {
+#ifdef _WIN32
+    if (_fseeki64(file, static_cast<int64_t>(offset), SEEK_SET) != 0)
+#else
+    if (fseeko(file, static_cast<off_t>(offset), SEEK_SET) != 0)
+#endif
+        throw runtime_error("Unable to seek database file.");
 }
 
-size_t pager::block_size()
+database_header decode_header(const pager::page& page)
 {
-    return 4096;
+    database_header result{};
+    memcpy(&result, page.data(), sizeof(result));
+    if (result.magic != database_magic || result.version != database_version ||
+        result.page_size != pager::page_size || result.page_count == 0)
+        throw runtime_error("Unsupported or corrupt tdb database header.");
+    return result;
 }
 
-void pager::create(const std::string& fileName)
+void encode_header(pager::page& page, uint64_t root_page, uint64_t page_count)
 {
-    auto f = r_file::open(fileName, "w+");
-
-    vector<uint8_t> block(pager::block_size());
-
-    memset(&block[0], 0, pager::block_size());
-    *(uint32_t*)&block[0] = 1;
-    *(uint64_t*)&block[4] = 0;
-
-    block_write_file(&block[0], pager::block_size(), f);
+    database_header header{database_magic, database_version,
+                           static_cast<uint32_t>(pager::page_size),
+                           root_page, page_count};
+    page.fill(0);
+    memcpy(page.data(), &header, sizeof(header));
+}
 }
 
-uint64_t pager::block_start_from(uint64_t ofs) const
+pager::pager(const string& file_name) :
+    _file_name(file_name), _wal_name(file_name + ".wal"),
+    _file(r_file::open(file_name, "r+b"))
 {
-    return (ofs / pager::block_size()) * pager::block_size();
+    recover();
+    (void)decode_header(read(0));
 }
 
-r_memory_map pager::map_page_from(uint64_t ofs) const
+void pager::create(const string& file_name)
 {
-    auto blockStart = block_start_from(ofs);
-    size_t blockOfs = ofs - blockStart;
-
-    return std::move(r_memory_map(fileno(_f),
-                                blockStart,
-                                pager::block_size(),
-                                r_memory_map::MM_PROT_READ | r_memory_map::MM_PROT_WRITE,
-                                r_memory_map::MM_TYPE_FILE | r_memory_map::MM_SHARED,
-                                blockOfs));
+    auto file = r_file::open(file_name, "w+b");
+    page header_page{};
+    encode_header(header_page, 0, 1);
+    block_write_file(header_page.data(), header_page.size(), file);
+    sync_file(file);
+    remove_file(file_name + ".wal");
 }
 
-uint64_t pager::append_page() const
+pager::page pager::read(uint64_t page_number) const
 {
-    uint32_t lastNBlocks;
-
-    // The idea here is that we want to append space for 1 block to the end of the file and update our
-    // nblocks field in the special block at the beginning of the file. We'd also like to return the file
-    // offset of the new blocks.
-    //
-    // To keep this lock free I'm calling _update_nblocks() (which uses the gcc compiler intrinsic for
-    // compare and swap).
-
-    do {
-        lastNBlocks = _read_nblocks();
-        auto err = ftruncate(fileno(_f), ((lastNBlocks+1)*pager::block_size()));
-        if(err != 0)
-            throw std::runtime_error("ftruncate failed");
-    } while(!_update_nblocks(lastNBlocks, lastNBlocks+1));
-    
-    //return pager::block_size() + (lastNBlocks * pager::block_size());
-    return lastNBlocks * pager::block_size();
+    lock_guard lock(_io_mutex);
+    page result{};
+    seek_file(_file, page_number * page_size);
+    block_read_file(result.data(), result.size(), _file);
+    return result;
 }
 
-uint64_t pager::root_ofs() const
+uint64_t pager::root_page() const
 {
-    return _read_root_ofs();
+    return decode_header(read(0)).root_page;
 }
 
-bool pager::set_root_ofs(uint64_t lastVal, uint64_t newVal) const
+pager::transaction pager::begin_transaction()
 {
-    return _update_root_ofs(lastVal, newVal);
+    return transaction(*this);
 }
 
-void pager::sync() const
+void pager::write_page(uint64_t page_number, const page& contents)
 {
-    fsync(fileno(_f));
+    seek_file(_file, page_number * page_size);
+    block_write_file(contents.data(), contents.size(), _file);
 }
 
-uint32_t pager::_read_nblocks() const
+void pager::commit(const map<uint64_t, page>& pages)
 {
-    auto mp = _mm.map();
-    return *((uint32_t*)mp.first);
+    if (pages.empty()) return;
+
+    {
+        auto wal = r_file::open(_wal_name, "w+b");
+        wal_header header{wal_magic, database_version,
+                          static_cast<uint32_t>(page_size), pages.size()};
+        uint64_t checksum = 14695981039346656037ULL;
+        checksum = checksum_bytes(checksum, &header, sizeof(header));
+        block_write_file(&header, sizeof(header), wal);
+
+        for (const auto& [page_number, contents] : pages)
+        {
+            checksum = checksum_bytes(checksum, &page_number, sizeof(page_number));
+            checksum = checksum_bytes(checksum, contents.data(), contents.size());
+            block_write_file(&page_number, sizeof(page_number), wal);
+            block_write_file(contents.data(), contents.size(), wal);
+        }
+
+        wal_footer footer{wal_commit_magic, checksum};
+        block_write_file(&footer, sizeof(footer), wal);
+        sync_file(wal);
+    }
+
+    {
+        lock_guard lock(_io_mutex);
+        for (const auto& [page_number, contents] : pages)
+            write_page(page_number, contents);
+        sync_file(_file);
+    }
+    remove_file(_wal_name);
 }
 
-bool pager::_update_nblocks(uint32_t lastVal, uint32_t newVal) const
+void pager::recover()
 {
-    return __sync_bool_compare_and_swap((uint32_t*)map_page_from(0).map().first, lastVal, newVal);
+    if (!filesystem::exists(_wal_name)) return;
+
+    bool committed = false;
+    map<uint64_t, page> pages;
+    try
+    {
+        auto wal = r_file::open(_wal_name, "rb");
+        wal_header header{};
+        block_read_file(&header, sizeof(header), wal);
+        if (header.magic != wal_magic || header.version != database_version ||
+            header.page_size != page_size)
+            throw runtime_error("Invalid WAL header.");
+
+        uint64_t checksum = 14695981039346656037ULL;
+        checksum = checksum_bytes(checksum, &header, sizeof(header));
+        for (uint64_t i = 0; i < header.record_count; ++i)
+        {
+            uint64_t page_number = 0;
+            page contents{};
+            block_read_file(&page_number, sizeof(page_number), wal);
+            block_read_file(contents.data(), contents.size(), wal);
+            checksum = checksum_bytes(checksum, &page_number, sizeof(page_number));
+            checksum = checksum_bytes(checksum, contents.data(), contents.size());
+            pages[page_number] = contents;
+        }
+        wal_footer footer{};
+        block_read_file(&footer, sizeof(footer), wal);
+        committed = footer.commit_magic == wal_commit_magic && footer.checksum == checksum;
+    }
+    catch (const exception&)
+    {
+        committed = false;
+    }
+
+    if (committed)
+    {
+        lock_guard lock(_io_mutex);
+        for (const auto& [page_number, contents] : pages)
+            write_page(page_number, contents);
+        sync_file(_file);
+    }
+    remove_file(_wal_name);
 }
 
-uint64_t pager::_read_root_ofs() const
+pager::transaction::transaction(pager& owner) :
+    _owner(owner), _root_page(0), _page_count(0), _committed(false)
 {
-    auto mp = _mm.map();
-    return *((uint64_t*)(mp.first + 4));
+    auto header = decode_header(_owner.read(0));
+    _root_page = header.root_page;
+    _page_count = header.page_count;
 }
 
-bool pager::_update_root_ofs(uint64_t lastVal, uint64_t newVal) const
+const pager::page& pager::transaction::read(uint64_t page_number)
 {
-    return __sync_bool_compare_and_swap((uint64_t*)(map_page_from(0).map().first + 4), lastVal, newVal);
+    auto found = _pages.find(page_number);
+    if (found == _pages.end())
+        found = _pages.emplace(page_number, _owner.read(page_number)).first;
+    return found->second;
+}
+
+pager::page& pager::transaction::write(uint64_t page_number)
+{
+    (void)read(page_number);
+    _dirty_pages.insert(page_number);
+    return _pages.at(page_number);
+}
+
+uint64_t pager::transaction::allocate()
+{
+    const uint64_t result = _page_count++;
+    _pages[result] = page{};
+    _dirty_pages.insert(result);
+    return result;
+}
+
+uint64_t pager::transaction::root_page() const { return _root_page; }
+void pager::transaction::set_root_page(uint64_t page_number) { _root_page = page_number; }
+
+void pager::transaction::commit()
+{
+    if (_committed) throw logic_error("Transaction has already committed.");
+    encode_header(write(0), _root_page, _page_count);
+    map<uint64_t, page> dirty;
+    for (uint64_t page_number : _dirty_pages)
+        dirty.emplace(page_number, _pages.at(page_number));
+    _owner.commit(dirty);
+    _committed = true;
 }

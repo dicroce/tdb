@@ -17,6 +17,8 @@ public:
       TEST(test_b_tree::test_search_non_existent_keys);
       TEST(test_b_tree::test_large_number_of_keys);
       TEST(test_b_tree::test_concurrent_inserts);
+      TEST(test_b_tree::test_delete_and_reinsert);
+      TEST(test_b_tree::test_concurrent_readers);
     RTF_FIXTURE_END();
 
     virtual ~test_b_tree() throw() {}
@@ -36,4 +38,6 @@ public:
     void test_search_non_existent_keys();
     void test_large_number_of_keys();
     void test_concurrent_inserts();
+    void test_delete_and_reinsert();
+    void test_concurrent_readers();
 };

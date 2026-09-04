@@ -1,47 +1,63 @@
-
-#ifndef __pager_h
-#define __pager_h
+#ifndef TDB_PAGER_H
+#define TDB_PAGER_H
 
 #include "tdb/file_utils.h"
+
+#include <array>
+#include <cstdint>
+#include <map>
+#include <mutex>
+#include <set>
 #include <string>
 
 class pager final
 {
 public:
-    pager(const std::string& fileName);
+    static constexpr std::size_t page_size = 4096;
+    using page = std::array<std::uint8_t, page_size>;
+
+    class transaction final
+    {
+    public:
+        explicit transaction(pager& owner);
+
+        const page& read(std::uint64_t page_number);
+        page& write(std::uint64_t page_number);
+        std::uint64_t allocate();
+        std::uint64_t root_page() const;
+        void set_root_page(std::uint64_t page_number);
+        void commit();
+
+    private:
+        pager& _owner;
+        std::map<std::uint64_t, page> _pages;
+        std::set<std::uint64_t> _dirty_pages;
+        std::uint64_t _root_page;
+        std::uint64_t _page_count;
+        bool _committed;
+    };
+
+    explicit pager(const std::string& file_name);
     pager(const pager&) = delete;
-    pager(pager&&) = delete;
-    ~pager() noexcept;
     pager& operator=(const pager&) = delete;
-    pager& operator=(pager&&) = delete;
 
-    static size_t block_size();
+    static void create(const std::string& file_name);
 
-    static void create(const std::string& fileName);
-
-    uint64_t block_start_from(uint64_t ofs) const;
-
-    r_memory_map map_page_from(uint64_t ofs) const;
-
-    uint64_t append_page() const;
-
-    uint64_t root_ofs() const;
-    bool set_root_ofs(uint64_t lastVal, uint64_t newVal) const;
-
-    void sync() const;
+    page read(std::uint64_t page_number) const;
+    std::uint64_t root_page() const;
+    transaction begin_transaction();
 
 private:
-    uint32_t _read_nblocks() const;
+    friend class transaction;
 
-    bool _update_nblocks(uint32_t lastVal, uint32_t newVal) const;
+    void recover();
+    void commit(const std::map<std::uint64_t, page>& pages);
+    void write_page(std::uint64_t page_number, const page& contents);
 
-    uint64_t _read_root_ofs() const;
-
-    bool _update_root_ofs(uint64_t lastVal, uint64_t newVal) const;
-
-    std::string _fileName;
-    r_file _f;
-    r_memory_map _mm;
+    std::string _file_name;
+    std::string _wal_name;
+    r_file _file;
+    mutable std::mutex _io_mutex;
 };
 
 #endif
