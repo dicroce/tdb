@@ -32,6 +32,6 @@ undo records and per-page log sequence numbers.
 ### Deliberate limitations
 
 - Writer serialization is process-local, not cross-process.
-- Removing a key does not yet merge or rebalance underfull pages.
-- Freed pages are not yet reused, and `vacuum()` is not implemented.
+- Removed pages are recycled through an on-disk free-page list. The physical
+  file is not shrunk, and `vacuum()` is not implemented.
 - Each public mutation is its own durable transaction; batching is future work.

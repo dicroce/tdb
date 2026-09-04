@@ -13,6 +13,7 @@
 #include <thread>
 #include <cstdint>
 #include <atomic>
+#include <filesystem>
 
 using namespace std;
 
@@ -65,6 +66,8 @@ void test_b_tree::teardown()
     remove_file("test_large_number_of_keys.db");
     remove_file("test_concurrent_inserts.db");
     remove_file("big_dotfile.txt");
+    remove_file("test_remove_reuses_pages.db");
+    remove_file("test_remove_reuses_pages.db.wal");
 }
 
 void test_b_tree::test_CAS()
@@ -288,4 +291,30 @@ void test_b_tree::test_concurrent_readers()
     }
     for (auto& reader : readers) reader.join();
     RTF_ASSERT(all_found);
+}
+
+void test_b_tree::test_remove_reuses_pages()
+{
+    const std::string path = "test_remove_reuses_pages.db";
+    b_tree::create_db_file(path);
+    std::uintmax_t high_water_size = 0;
+    {
+        b_tree t(path, 2);
+        for (int64_t key = 0; key < 500; ++key)
+            t.insert(key, key + 1000);
+        high_water_size = std::filesystem::file_size(path);
+
+        for (int64_t key = 0; key < 500; ++key)
+            t.remove(key);
+        for (int64_t key = 0; key < 500; ++key)
+            RTF_ASSERT(!t.search(key));
+    }
+    {
+        b_tree t(path, 2);
+        for (int64_t key = 500; key < 1000; ++key)
+            t.insert(key, key + 1000);
+        for (int64_t key = 500; key < 1000; ++key)
+            RTF_ASSERT(t.search(key) == key + 1000);
+    }
+    RTF_ASSERT(std::filesystem::file_size(path) == high_water_size);
 }

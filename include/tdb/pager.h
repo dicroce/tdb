@@ -24,6 +24,7 @@ public:
         const page& read(std::uint64_t page_number);
         page& write(std::uint64_t page_number);
         std::uint64_t allocate();
+        void release(std::uint64_t page_number);
         std::uint64_t root_page() const;
         void set_root_page(std::uint64_t page_number);
         void commit();
@@ -34,6 +35,7 @@ public:
         std::set<std::uint64_t> _dirty_pages;
         std::uint64_t _root_page;
         std::uint64_t _page_count;
+        std::uint64_t _free_page;
         bool _committed;
     };
 

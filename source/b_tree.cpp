@@ -126,6 +126,134 @@ struct split_result
     int64_t separator;
     uint64_t right_page;
 };
+
+int64_t subtree_first_key(pager::transaction& tx, uint64_t page_number)
+{
+    while (true)
+    {
+        node current = decode_node(tx.read(page_number));
+        if (current.leaf)
+        {
+            if (current.keys.empty())
+                throw runtime_error("An empty non-root leaf remains in the B+tree.");
+            return current.keys.front();
+        }
+        if (current.children.empty())
+            throw runtime_error("An internal B+tree node has no children.");
+        page_number = current.children.front();
+    }
+}
+
+void refresh_separators(pager::transaction& tx, node& parent)
+{
+    if (parent.leaf) throw logic_error("A leaf does not have separators.");
+    if (parent.children.empty())
+        throw runtime_error("An internal B+tree node has no children.");
+    parent.keys.clear();
+    parent.keys.reserve(parent.children.size() - 1);
+    for (size_t i = 1; i < parent.children.size(); ++i)
+        parent.keys.push_back(subtree_first_key(tx, parent.children[i]));
+}
+
+void rebalance_child(pager::transaction& tx, node& parent, size_t child_index,
+                     size_t minimum_keys)
+{
+    node child = decode_node(tx.read(parent.children[child_index]));
+    if (child.keys.size() >= minimum_keys) return;
+
+    if (child_index > 0)
+    {
+        const uint64_t left_page = parent.children[child_index - 1];
+        node left = decode_node(tx.read(left_page));
+        if (left.keys.size() > minimum_keys)
+        {
+            if (child.leaf)
+            {
+                child.keys.insert(child.keys.begin(), left.keys.back());
+                child.values.insert(child.values.begin(), left.values.back());
+                left.keys.pop_back();
+                left.values.pop_back();
+            }
+            else
+            {
+                child.children.insert(child.children.begin(), left.children.back());
+                left.children.pop_back();
+                refresh_separators(tx, left);
+                refresh_separators(tx, child);
+            }
+            encode_node(tx.write(left_page), left);
+            encode_node(tx.write(parent.children[child_index]), child);
+            return;
+        }
+    }
+
+    if (child_index + 1 < parent.children.size())
+    {
+        const uint64_t right_page = parent.children[child_index + 1];
+        node right = decode_node(tx.read(right_page));
+        if (right.keys.size() > minimum_keys)
+        {
+            if (child.leaf)
+            {
+                child.keys.push_back(right.keys.front());
+                child.values.push_back(right.values.front());
+                right.keys.erase(right.keys.begin());
+                right.values.erase(right.values.begin());
+            }
+            else
+            {
+                child.children.push_back(right.children.front());
+                right.children.erase(right.children.begin());
+                refresh_separators(tx, child);
+                refresh_separators(tx, right);
+            }
+            encode_node(tx.write(parent.children[child_index]), child);
+            encode_node(tx.write(right_page), right);
+            return;
+        }
+    }
+
+    if (child_index > 0)
+    {
+        const uint64_t child_page = parent.children[child_index];
+        const uint64_t left_page = parent.children[child_index - 1];
+        node left = decode_node(tx.read(left_page));
+        if (child.leaf)
+        {
+            left.keys.insert(left.keys.end(), child.keys.begin(), child.keys.end());
+            left.values.insert(left.values.end(), child.values.begin(), child.values.end());
+            left.next_leaf = child.next_leaf;
+        }
+        else
+        {
+            left.children.insert(left.children.end(), child.children.begin(), child.children.end());
+            refresh_separators(tx, left);
+        }
+        encode_node(tx.write(left_page), left);
+        parent.children.erase(parent.children.begin() + child_index);
+        tx.release(child_page);
+    }
+    else if (parent.children.size() > 1)
+    {
+        const uint64_t child_page = parent.children[child_index];
+        const uint64_t right_page = parent.children[child_index + 1];
+        node right = decode_node(tx.read(right_page));
+        if (child.leaf)
+        {
+            child.keys.insert(child.keys.end(), right.keys.begin(), right.keys.end());
+            child.values.insert(child.values.end(), right.values.begin(), right.values.end());
+            child.next_leaf = right.next_leaf;
+        }
+        else
+        {
+            child.children.insert(child.children.end(), right.children.begin(), right.children.end());
+            refresh_separators(tx, child);
+        }
+        encode_node(tx.write(child_page), child);
+        parent.children.erase(parent.children.begin() + child_index + 1);
+        tx.release(right_page);
+    }
+}
 }
 
 shared_mutex b_tree::_tree_mutex;
@@ -258,27 +386,60 @@ void b_tree::remove(int64_t key)
 {
     unique_lock lock(_tree_mutex);
     auto tx = _pager.begin_transaction();
-    uint64_t page_number = tx.root_page();
-    if (page_number == 0) return;
+    const uint64_t original_root = tx.root_page();
+    if (original_root == 0) return;
+    const size_t minimum_keys = _max_keys / 2;
 
-    while (true)
+    struct remove_result { bool removed; bool underflow; };
+    function<remove_result(uint64_t, bool)> remove_recursive;
+    remove_recursive = [&](uint64_t page_number, bool is_root) -> remove_result
     {
         node current = decode_node(tx.read(page_number));
         if (current.leaf)
         {
             auto position = lower_bound(current.keys.begin(), current.keys.end(), key);
-            if (position == current.keys.end() || *position != key) return;
+            if (position == current.keys.end() || *position != key)
+                return {false, false};
             const size_t index = static_cast<size_t>(position - current.keys.begin());
             current.keys.erase(position);
             current.values.erase(current.values.begin() + index);
             encode_node(tx.write(page_number), current);
-            tx.commit();
-            return;
+            return {true, !is_root && current.keys.size() < minimum_keys};
         }
+
         const size_t child_index = upper_bound(current.keys.begin(), current.keys.end(), key)
             - current.keys.begin();
-        page_number = current.children[child_index];
+        remove_result result = remove_recursive(current.children[child_index], false);
+        if (!result.removed) return result;
+        if (result.underflow)
+            rebalance_child(tx, current, child_index, minimum_keys);
+        refresh_separators(tx, current);
+        encode_node(tx.write(page_number), current);
+        return {true, !is_root && current.keys.size() < minimum_keys};
+    };
+
+    if (!remove_recursive(original_root, true).removed) return;
+
+    uint64_t root_page = original_root;
+    while (root_page != 0)
+    {
+        node root = decode_node(tx.read(root_page));
+        if (root.leaf)
+        {
+            if (root.keys.empty())
+            {
+                tx.release(root_page);
+                root_page = 0;
+            }
+            break;
+        }
+        if (root.children.size() != 1) break;
+        const uint64_t old_root = root_page;
+        root_page = root.children.front();
+        tx.release(old_root);
     }
+    tx.set_root_page(root_page);
+    tx.commit();
 }
 
 void b_tree::write_dot_file(const string& file_name)
