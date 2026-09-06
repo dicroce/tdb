@@ -1,18 +1,30 @@
 #include "tdb/row_store.h"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 using namespace std;
 
 namespace
 {
 constexpr uint32_t row_page_magic = 0x53574f52; // "ROWS"
+constexpr uint32_t overflow_page_magic = 0x46564f52; // "ROVF"
 constexpr uint16_t occupied_flag = 1;
+constexpr uint16_t overflow_flag = 2;
 constexpr size_t header_size = 20;
 constexpr size_t slot_size = 8;
+constexpr size_t overflow_header_size = 16;
+constexpr size_t overflow_capacity = pager::page_size - overflow_header_size;
+// A spilled row keeps a fixed-size stub in the slotted page: the first overflow
+// page number followed by the row's total length.
+constexpr size_t overflow_stub_size = 12;
+// The largest row that still fits in an otherwise empty slotted page. Anything
+// larger spills, so rows at or below this size are stored exactly as before.
+constexpr size_t maximum_inline_size = pager::page_size - header_size - slot_size;
 constexpr uint64_t slot_mask = 0x0fff;
 constexpr uint64_t generation_mask = 0xffff;
 constexpr unsigned slot_shift = 16;
@@ -36,6 +48,12 @@ struct row_slot
     uint16_t length;
     uint16_t generation;
     uint16_t flags;
+};
+
+struct overflow_page_header
+{
+    uint32_t byte_count;
+    uint64_t next_page;
 };
 
 template<typename T>
@@ -141,6 +159,76 @@ void compact(pager::page& page, row_page_header& header)
     page = packed;
 }
 
+overflow_page_header read_overflow_header(const pager::page& page)
+{
+    if (load<uint32_t>(page, 0) != overflow_page_magic)
+        throw runtime_error("Invalid row-store overflow page.");
+    overflow_page_header result{load<uint32_t>(page, 4), load<uint64_t>(page, 8)};
+    if (result.byte_count == 0 || result.byte_count > overflow_capacity)
+        throw runtime_error("Corrupt row-store overflow page.");
+    return result;
+}
+
+void write_overflow_header(pager::page& page, const overflow_page_header& header)
+{
+    store<uint32_t>(page, 0, overflow_page_magic);
+    store<uint32_t>(page, 4, header.byte_count);
+    store<uint64_t>(page, 8, header.next_page);
+}
+
+// Spills a row across a chain of overflow pages and returns the first page. The
+// page numbers are reserved up front so each page can record its successor.
+uint64_t write_overflow_chain(pager::transaction& tx, span<const uint8_t> bytes)
+{
+    const size_t count = (bytes.size() + overflow_capacity - 1) / overflow_capacity;
+    if (count == 0) throw logic_error("An empty row never spills.");
+    vector<uint64_t> pages;
+    pages.reserve(count);
+    for (size_t i = 0; i < count; ++i) pages.push_back(tx.allocate());
+    for (size_t i = 0; i < count; ++i)
+    {
+        const size_t begin = i * overflow_capacity;
+        const size_t length = (min)(overflow_capacity, bytes.size() - begin);
+        pager::page page{};
+        write_overflow_header(page, {static_cast<uint32_t>(length),
+                                     i + 1 < count ? pages[i + 1] : uint64_t{0}});
+        memcpy(page.data() + overflow_header_size, bytes.data() + begin, length);
+        tx.write(pages[i]) = page;
+    }
+    return pages.front();
+}
+
+template<typename ReadPage>
+vector<uint8_t> read_overflow_chain(ReadPage&& read_page, uint64_t first_page,
+                                    uint32_t total_length)
+{
+    vector<uint8_t> result;
+    result.reserve(total_length);
+    uint64_t page_number = first_page;
+    while (page_number != 0)
+    {
+        const pager::page& page = read_page(page_number);
+        const overflow_page_header header = read_overflow_header(page);
+        if (result.size() + header.byte_count > total_length)
+            throw runtime_error("Row-store overflow chain is too long.");
+        result.insert(result.end(), page.begin() + overflow_header_size,
+                      page.begin() + overflow_header_size + header.byte_count);
+        page_number = header.next_page;
+    }
+    if (result.size() != total_length)
+        throw runtime_error("Row-store overflow chain is truncated.");
+    return result;
+}
+
+// Reads the {first overflow page, total length} stub a spilled row leaves behind.
+pair<uint64_t, uint32_t> read_overflow_stub(const pager::page& page, const row_slot& slot)
+{
+    if (slot.length != overflow_stub_size)
+        throw runtime_error("Corrupt row-store overflow stub.");
+    return {load<uint64_t>(page, slot.offset),
+            load<uint32_t>(page, slot.offset + sizeof(uint64_t))};
+}
+
 row_id make_id(uint64_t page_number, uint16_t slot, uint16_t generation)
 {
     if (page_number > maximum_page || slot > slot_mask || generation == 0)
@@ -166,6 +254,11 @@ optional<vector<uint8_t>> get_row(ReadPage&& read_page, row_id id)
     const row_slot slot = read_slot(page, index);
     if ((slot.flags & occupied_flag) == 0 || slot.generation != id_generation(id))
         return nullopt;
+    if ((slot.flags & overflow_flag) != 0)
+    {
+        const auto [first_page, total_length] = read_overflow_stub(page, slot);
+        return read_overflow_chain(read_page, first_page, total_length);
+    }
     return vector<uint8_t>(page.begin() + slot.offset,
                            page.begin() + slot.offset + slot.length);
 }
@@ -175,10 +268,28 @@ row_id row_store::insert(b_tree_write_transaction& transaction,
                          span<const uint8_t> bytes) const
 {
     transaction.require_active();
-    if (bytes.size() > pager::page_size - header_size - slot_size)
-        throw length_error("Row is too large for one row-store page.");
+    if (bytes.size() > (numeric_limits<uint32_t>::max)())
+        throw length_error("Row exceeds the 4 GiB row-store limit.");
 
     pager::transaction& tx = transaction._transaction;
+
+    // Rows too large for a slotted page spill into a chain of overflow pages and
+    // leave a fixed-size stub behind. From here down the stub is stored exactly
+    // like any other small row, so slot allocation and compaction are unchanged.
+    array<uint8_t, overflow_stub_size> stub{};
+    span<const uint8_t> payload = bytes;
+    const bool spilled = bytes.size() > maximum_inline_size;
+    if (spilled)
+    {
+        const uint64_t first_page = write_overflow_chain(tx, bytes);
+        const uint32_t total_length = static_cast<uint32_t>(bytes.size());
+        memcpy(stub.data(), &first_page, sizeof(first_page));
+        memcpy(stub.data() + sizeof(first_page), &total_length, sizeof(total_length));
+        payload = stub;
+    }
+    const uint16_t new_flags =
+        spilled ? static_cast<uint16_t>(occupied_flag | overflow_flag) : occupied_flag;
+
     uint64_t page_number = tx.row_page();
     while (page_number != 0)
     {
@@ -194,7 +305,7 @@ row_id row_store::insert(b_tree_write_transaction& transaction,
             }
         const size_t directory_cost = free_slot == header.slot_count ? slot_size : 0;
         if (header_size + static_cast<size_t>(header.slot_count) * slot_size +
-            directory_cost + live_bytes(candidate, header) + bytes.size() <=
+            directory_cost + live_bytes(candidate, header) + payload.size() <=
             pager::page_size)
         {
             compact(candidate, header);
@@ -208,12 +319,12 @@ row_id row_store::insert(b_tree_write_transaction& transaction,
             row_slot slot = read_slot(candidate, free_slot);
             slot.generation = static_cast<uint16_t>(slot.generation + 1);
             if (slot.generation == 0) ++slot.generation;
-            header.free_end = static_cast<uint16_t>(header.free_end - bytes.size());
+            header.free_end = static_cast<uint16_t>(header.free_end - payload.size());
             slot.offset = header.free_end;
-            slot.length = static_cast<uint16_t>(bytes.size());
-            slot.flags = occupied_flag;
-            if (!bytes.empty())
-                memcpy(candidate.data() + slot.offset, bytes.data(), bytes.size());
+            slot.length = static_cast<uint16_t>(payload.size());
+            slot.flags = new_flags;
+            if (!payload.empty())
+                memcpy(candidate.data() + slot.offset, payload.data(), payload.size());
             ++header.live_count;
             write_slot(candidate, free_slot, slot);
             write_header(candidate, header);
@@ -226,10 +337,10 @@ row_id row_store::insert(b_tree_write_transaction& transaction,
     page_number = tx.allocate();
     pager::page page{};
     row_page_header header{1, 1, static_cast<uint16_t>(header_size + slot_size),
-                           static_cast<uint16_t>(pager::page_size - bytes.size()),
+                           static_cast<uint16_t>(pager::page_size - payload.size()),
                            tx.row_page()};
-    row_slot slot{header.free_end, static_cast<uint16_t>(bytes.size()), 1, occupied_flag};
-    if (!bytes.empty()) memcpy(page.data() + slot.offset, bytes.data(), bytes.size());
+    row_slot slot{header.free_end, static_cast<uint16_t>(payload.size()), 1, new_flags};
+    if (!payload.empty()) memcpy(page.data() + slot.offset, payload.data(), payload.size());
     write_slot(page, 0, slot);
     write_header(page, header);
     tx.write(page_number) = page;
@@ -265,6 +376,17 @@ bool row_store::remove(b_tree_write_transaction& transaction, row_id id) const
     row_slot slot = read_slot(page, index);
     if ((slot.flags & occupied_flag) == 0 || slot.generation != id_generation(id))
         return false;
+    if ((slot.flags & overflow_flag) != 0)
+    {
+        uint64_t chain = read_overflow_stub(page, slot).first;
+        while (chain != 0)
+        {
+            const uint64_t next =
+                read_overflow_header(transaction._transaction.read(chain)).next_page;
+            transaction._transaction.release(chain);
+            chain = next;
+        }
+    }
     slot.flags = 0;
     slot.offset = 0;
     slot.length = 0;

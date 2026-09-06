@@ -77,6 +77,12 @@ void test_b_tree::teardown()
     remove_file("test_row_store.db.wal");
     remove_file("test_atomic_row_and_index.db");
     remove_file("test_atomic_row_and_index.db.wal");
+    remove_file("test_row_store_overflow.db");
+    remove_file("test_row_store_overflow.db.wal");
+    remove_file("test_row_store_overflow_reuse.db");
+    remove_file("test_row_store_overflow_reuse.db.wal");
+    remove_file("test_row_store_overflow_atomic.db");
+    remove_file("test_row_store_overflow_atomic.db.wal");
 }
 
 void test_b_tree::test_CAS()
@@ -488,6 +494,141 @@ void test_b_tree::test_row_store()
         auto read = database.begin_read();
         RTF_ASSERT(!rows.get(read, first_id));
         RTF_ASSERT(rows.get(read, replacement_id) == vector<uint8_t>({9, 8, 7}));
+    }
+}
+
+static vector<uint8_t> pattern_bytes(size_t length)
+{
+    vector<uint8_t> result(length);
+    for (size_t i = 0; i < length; ++i)
+        result[i] = static_cast<uint8_t>((i * 31 + 7) & 0xff);
+    return result;
+}
+
+void test_b_tree::test_row_store_overflow()
+{
+    const string path = "test_row_store_overflow.db";
+    b_tree::create_db_file(path);
+    b_tree database(path, 4);
+    row_store rows;
+
+    // 4068 is the largest inline row; 4080 is one full overflow page.
+    const vector<size_t> sizes{0, 1, 4067, 4068, 4069, 4080, 4081, 8160, 8161, 1000000};
+    vector<vector<uint8_t>> payloads;
+    vector<row_id> ids;
+    {
+        auto write = database.begin_write();
+        for (size_t size : sizes)
+        {
+            payloads.push_back(pattern_bytes(size));
+            ids.push_back(rows.insert(write, payloads.back()));
+            // Interleave a small row so the slotted pages stay in play.
+            rows.insert(write, vector<uint8_t>{1, 2, 3});
+        }
+        write.commit();
+    }
+    {
+        auto read = database.begin_read();
+        for (size_t i = 0; i < ids.size(); ++i)
+            RTF_ASSERT(rows.get(read, ids[i]) == payloads[i]);
+    }
+
+    // Survives a reopen, so the chain is genuinely on disk.
+    {
+        b_tree reopened(path, 4);
+        auto read = reopened.begin_read();
+        for (size_t i = 0; i < ids.size(); ++i)
+            RTF_ASSERT(rows.get(read, ids[i]) == payloads[i]);
+    }
+
+    // Removing a spilled row invalidates it without disturbing its neighbours.
+    {
+        auto write = database.begin_write();
+        RTF_ASSERT(rows.remove(write, ids.back()));
+        RTF_ASSERT(!rows.remove(write, ids.back()));
+        write.commit();
+    }
+    {
+        auto read = database.begin_read();
+        RTF_ASSERT(!rows.get(read, ids.back()));
+        for (size_t i = 0; i + 1 < ids.size(); ++i)
+            RTF_ASSERT(rows.get(read, ids[i]) == payloads[i]);
+    }
+}
+
+void test_b_tree::test_row_store_overflow_reuses_pages()
+{
+    const string path = "test_row_store_overflow_reuse.db";
+    b_tree::create_db_file(path);
+    b_tree database(path, 4);
+    row_store rows;
+    const vector<uint8_t> payload = pattern_bytes(1000000);
+
+    row_id first_id = 0;
+    {
+        auto write = database.begin_write();
+        first_id = rows.insert(write, payload);
+        write.commit();
+    }
+    const uintmax_t high_water_size = filesystem::file_size(path);
+
+    {
+        auto write = database.begin_write();
+        RTF_ASSERT(rows.remove(write, first_id));
+        write.commit();
+    }
+
+    row_id second_id = 0;
+    {
+        auto write = database.begin_write();
+        second_id = rows.insert(write, payload);
+        write.commit();
+    }
+    {
+        auto read = database.begin_read();
+        RTF_ASSERT(!rows.get(read, first_id));
+        RTF_ASSERT(rows.get(read, second_id) == payload);
+    }
+    // The whole chain came back through the pager free list.
+    RTF_ASSERT(filesystem::file_size(path) == high_water_size);
+}
+
+void test_b_tree::test_row_store_overflow_is_atomic()
+{
+    const string path = "test_row_store_overflow_atomic.db";
+    b_tree::create_db_file(path);
+    const uintmax_t empty_size = filesystem::file_size(path);
+    const vector<uint8_t> payload = pattern_bytes(1000000);
+    row_store rows;
+
+    {
+        b_tree database(path, 4);
+        // Dropped without committing: a 1 MB chain must leave nothing on disk.
+        auto write = database.begin_write();
+        const row_id id = rows.insert(write, payload);
+        write.insert(1, static_cast<int64_t>(id));
+    }
+    RTF_ASSERT(filesystem::file_size(path) == empty_size);
+    {
+        b_tree database(path, 4);
+        auto read = database.begin_read();
+        RTF_ASSERT(!read.get(1));
+    }
+
+    // The same spill, committed, is intact after a reopen.
+    row_id committed_id = 0;
+    {
+        b_tree database(path, 4);
+        auto write = database.begin_write();
+        committed_id = rows.insert(write, payload);
+        write.insert(1, static_cast<int64_t>(committed_id));
+        write.commit();
+    }
+    {
+        b_tree database(path, 4);
+        auto read = database.begin_read();
+        RTF_ASSERT(read.get(1) == static_cast<int64_t>(committed_id));
+        RTF_ASSERT(rows.get(read, committed_id) == payload);
     }
 }
 
